@@ -1,7 +1,13 @@
 name: Checks
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     strategy:
@@ -16,6 +22,7 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run pytest
+      - run: uv run repro-lens check
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv build

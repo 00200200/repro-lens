@@ -34,3 +34,4 @@ repos:
         language: system
         files: '\.(py|toml|lock)$'
         require_serial: true
+        always_run: true
