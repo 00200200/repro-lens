@@ -74,6 +74,10 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --no-dev
       - run: uv run --no-dev python tools/build_gallery.py
+      - name: Add the pinned Python runtime
+        run: uv run --no-dev python tools/fetch_pyodide.py
+      - name: Check the built browser engine
+        run: node tools/smoke_live_checker.mjs dist/gallery
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: dist/gallery

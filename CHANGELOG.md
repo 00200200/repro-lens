@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Check pasted Python in the browser gallery. The analyzer runs locally with a pinned, integrity-checked Pyodide served from the site; code is not uploaded or executed, and share links keep it in the URL fragment.
 - Check Jupyter notebook code cells and report findings by cell and line. IPython magics and shell commands are skipped; an invalid cell is reported without stopping the rest of the notebook. The pre-commit hook now passes staged `.ipynb` files.
 - Check `random_state` for 34 more scikit-learn APIs, including SGD models, MLP, KMeans, Gaussian mixtures, gradient boosting, bagging, TSNE, RandomizedSearchCV and `utils.shuffle`/`resample`. APIs seeded by default or random only for some arguments stay out of the registry.
 - Check calls in function/class decorators, class bases and class keyword arguments using enclosing import bindings.

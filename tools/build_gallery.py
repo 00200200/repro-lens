@@ -136,8 +136,19 @@ def build_gallery(cases_path: Path, output: Path) -> int:
     rendered = re.sub(r"\{\{[A-Z_]+\}\}", lambda match: replacements[match[0]], template)
     output.mkdir(parents=True, exist_ok=True)
     (output / "index.html").write_text(rendered, encoding="utf-8")
-    for name in ("styles.css", "gallery.js", "mark.svg"):
+    for name in ("styles.css", "gallery.js", "checker.js", "checker-worker.mjs", "mark.svg"):
         shutil.copyfile(ROOT / "site" / name, output / name)
+    # The live checker loads these exact analyzer sources in the browser.
+    engine = output / "engine/repro_lens"
+    engine.mkdir(parents=True, exist_ok=True)
+    sources = sorted((ROOT / "src/repro_lens").glob("*.py"))
+    for path in sources:
+        shutil.copyfile(path, engine / path.name)
+    manifest = {
+        "files": [path.name for path in sources],
+        "sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sources},
+    }
+    (output / "engine/manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (output / ".nojekyll").touch()
     return len(cases)
 

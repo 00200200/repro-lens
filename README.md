@@ -42,8 +42,10 @@ Use the CLI, an opt-in [pre-commit hook](#pre-commit), or the
 ## Try the before/after demo
 
 **Start without installing:** [explore the browser gallery](https://00200200.github.io/repro-lens/)
-to search checked code pairs by framework or finding. It shows saved static results
-from the same checker as the CLI; the page does not run your code.
+to search checked code pairs by framework or finding, or
+[paste your own script](https://00200200.github.io/repro-lens/#check). The live check
+runs the same analyzer as the CLI in your browser with Pyodide; your code is not
+uploaded or executed.
 
 Want a specific workflow? [Browse examples by question, dependencies and expected result](examples/README.md).
 
