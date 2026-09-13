@@ -9,6 +9,8 @@ import symtable
 import tokenize
 from dataclasses import asdict, dataclass
 
+from . import frameworks
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -28,6 +30,7 @@ RULES = {
     "R101": "A known randomized scikit-learn call has no explicit random_state.",
     "R102": "A new NumPy generator is initialized without explicit entropy control.",
     "R103": "A new Python Random instance is initialized without explicit entropy control.",
+    **frameworks.RULES,
     "R190": "Dynamic arguments prevent deciding whether randomness is controlled.",
     "P201": "A file required by the project's own policy is missing.",
     "P202": "Project policy or experiment configuration is invalid.",
@@ -121,12 +124,14 @@ class Scanner(ast.NodeVisitor):
     def visit_Assign(self, node):
         self.visit(node.value)
         for target in node.targets:
+            frameworks.check_assignment(node, self.qualified(target), node.value, self.emit)
             for name in bound_names(target):
                 self.bindings.pop(name, None)
 
     def visit_AnnAssign(self, node):
         if node.value:
             self.visit(node.value)
+            frameworks.check_assignment(node, self.qualified(node.target), node.value, self.emit)
         for name in bound_names(node.target):
             self.bindings.pop(name, None)
 
@@ -223,9 +228,13 @@ class Scanner(ast.NodeVisitor):
         self.bindings = outer
 
     def visit_Lambda(self, node):
+        # Defaults are evaluated in the enclosing scope, before parameters shadow imports.
+        for default in [*node.args.defaults, *node.args.kw_defaults]:
+            if default is not None:
+                self.visit(default)
         outer = self.bindings
         self.bindings = outer.copy()
-        for argument in ast.walk(node.args):
+        for argument in ast.iter_child_nodes(node.args):
             if isinstance(argument, ast.arg):
                 self.bindings.pop(argument.arg, None)
         self.visit(node.body)
@@ -233,6 +242,7 @@ class Scanner(ast.NodeVisitor):
 
     def visit_Call(self, node):
         name = self.qualified(node.func)
+        frameworks.check_call(node, name, self.emit)
         kwargs = {kw.arg: kw.value for kw in node.keywords if kw.arg}
         dynamic = any(kw.arg is None for kw in node.keywords) or any(
             isinstance(arg, ast.Starred) for arg in node.args
@@ -312,7 +322,7 @@ def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Fi
             r"#\s*repro-lens: ignore\[([A-Z0-9, ]+)\]\s*--\s*(\S.*)", token.string.strip()
         )
         codes = {code.strip() for code in match[1].split(",")} if match else set()
-        if not codes or not codes <= {"R101", "R102", "R103", "R190"}:
+        if not codes or not codes <= {"R101", "R102", "R103", "R190", *frameworks.RULES}:
             invalid.append(
                 Finding(
                     path,

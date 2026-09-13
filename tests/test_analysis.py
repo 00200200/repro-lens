@@ -217,6 +217,54 @@ def test_function_scope_with_all_parameter_kinds():
     """) == ["R102"]
 
 
+@pytest.mark.parametrize(
+    "parameters",
+    ["rng=random.Random({seed})", "rng=random.Random({seed}), /", "*, rng=random.Random({seed})"],
+    ids=["positional", "positional-only", "keyword-only"],
+)
+@pytest.mark.parametrize("seed", ["", "1729"], ids=["unseeded", "seeded"])
+def test_lambda_defaults_are_checked_in_the_enclosing_scope(parameters, seed):
+    declaration = parameters.format(seed=seed)
+    source = f"import random\nfactory = lambda {declaration}: rng\n"
+    active, _ = analyze(source, "train.py")
+    assert [(item.code, item.line) for item in active] == ([("R103", 2)] if not seed else [])
+
+
+@pytest.mark.parametrize("seed", ["", "1729"], ids=["unseeded", "seeded"])
+def test_parameter_of_a_lambda_default_does_not_shadow_the_outer_body(seed):
+    source = (
+        "import numpy as np\n"
+        "factory = lambda callback=lambda np: np.random.default_rng(): "
+        f"np.random.default_rng({seed})\n"
+    )
+    active, _ = analyze(source, "train.py")
+    assert [(item.code, item.column) for item in active] == (
+        [("R102", source.splitlines()[1].rindex("np.random") + 1)] if not seed else []
+    )
+
+
+@pytest.mark.parametrize("declaration", ["rng=rng()", "*, rng=rng()"])
+def test_lambda_parameter_shadows_import_only_in_its_body(declaration):
+    source = f"from numpy.random import default_rng as rng\nfactory = lambda {declaration}: rng()\n"
+    active, _ = analyze(source, "train.py")
+    assert [(item.code, item.column) for item in active] == [
+        ("R102", source.splitlines()[1].index("rng()") + 1)
+    ]
+
+
+def test_lambda_defaults_keep_dynamic_arguments_and_suppressions():
+    source = (
+        "from sklearn.ensemble import RandomForestClassifier as Forest\n"
+        "factory = lambda model=Forest(**options): model\n"
+        "seeded = lambda model=Forest(random_state=config.seed): model\n"
+        "shared = lambda model=Forest(): model  "
+        "# repro-lens: ignore[R101] -- Shared RNG is seeded by the reviewed entrypoint.\n"
+    )
+    active, suppressed = analyze(source, "train.py")
+    assert [(item.code, item.line, item.severity) for item in active] == [("R190", 2, "review")]
+    assert [(item.code, item.line) for item in suppressed] == [("R101", 4)]
+
+
 def test_function_import_does_not_leak_into_another_function():
     assert (
         codes("""

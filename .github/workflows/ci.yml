@@ -1,7 +1,7 @@
 name: Checks
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
   pull_request:
 permissions:
   contents: read
@@ -28,6 +28,8 @@ jobs:
       - run: uv build
       - name: Validate the before/after demo
         run: uv run python examples/agent_review/demo.py
+      - name: Validate framework screening examples
+        run: uv run --no-dev python examples/framework_checks/demo.py
       - name: Validate a generated experiment
         run: |
           uv run repro-lens init /tmp/repro-lens-example --name ci_experiment
@@ -42,4 +44,5 @@ jobs:
           path: |
             /tmp/repro-lens-example/.repro-lens/
             .repro-lens/agent-demo/
+            .repro-lens/framework-demo.json
           include-hidden-files: true

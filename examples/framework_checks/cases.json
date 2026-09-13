@@ -1,0 +1,44 @@
+[
+  {
+    "name": "XGBoost linear updater",
+    "before": "import xgboost as xgb\nxgb.XGBRegressor(booster='gblinear', random_state=seed)\n",
+    "after": "import xgboost as xgb\nxgb.XGBRegressor(booster='gblinear', updater='coord_descent', random_state=seed)\n",
+    "expected": ["R104", "warning"]
+  },
+  {
+    "name": "LightGBM CPU histogram",
+    "before": "import lightgbm as lgb\nlgb.train({'deterministic': True}, train_data)\n",
+    "after": "import lightgbm as lgb\nlgb.train({'deterministic': True, 'force_col_wise': True, 'seed': seed}, train_data)\n",
+    "expected": ["R105", "review"]
+  },
+  {
+    "name": "PyTorch shuffled data",
+    "before": "from torch.utils.data import DataLoader\nDataLoader(dataset, shuffle=True)\n",
+    "after": "import torch\nfrom torch.utils.data import DataLoader\nDataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed(seed))\n",
+    "expected": ["R106", "review"]
+  },
+  {
+    "name": "PyTorch cuDNN benchmark",
+    "before": "import torch\ntorch.backends.cudnn.benchmark = True\n",
+    "after": "import torch\ntorch.backends.cudnn.benchmark = False\n",
+    "expected": ["R107", "warning"]
+  },
+  {
+    "name": "TensorFlow RNG state",
+    "before": "import tensorflow as tf\ntf.random.Generator.from_non_deterministic_state()\n",
+    "after": "import tensorflow as tf\ntf.random.Generator.from_seed(seed)\n",
+    "expected": ["R108", "warning"]
+  },
+  {
+    "name": "Lightning Trainer",
+    "before": "from lightning.pytorch import Trainer\nTrainer(deterministic='warn')\n",
+    "after": "from lightning.pytorch import Trainer, seed_everything\nseed_everything(seed, workers=True)\nTrainer(deterministic=True, benchmark=False)\n",
+    "expected": ["R109", "review"]
+  },
+  {
+    "name": "PyTorch algorithm policy",
+    "before": "import torch\ntorch.use_deterministic_algorithms(True, warn_only=True)\n",
+    "after": "import torch\ntorch.use_deterministic_algorithms(True, warn_only=False)\n",
+    "expected": ["R110", "review"]
+  }
+]

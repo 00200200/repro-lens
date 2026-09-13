@@ -184,7 +184,8 @@ def check(root: Path, selected: list[str] | None = None) -> dict:
         "limitations": [
             "Only documented imported APIs are inspected; wrappers and data flow are not resolved.",
             "Explicit seed expressions are accepted but their runtime values are not proven.",
-            "Notebooks, PyTorch execution and data leakage are not analyzed in this version.",
+            "Global RNG state, notebooks, training execution and data leakage are not analyzed.",
+            "Framework checks cover only the APIs and conditions listed in docs/frameworks.md.",
         ],
     }
 

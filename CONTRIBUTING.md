@@ -11,5 +11,6 @@ Keep the checker stdlib-only. Framework-specific imports belong in experiments, 
 in the scanner. Verify source and built-wheel installation when changing packaging.
 
 Current useful contributions: notebook cell locations, stronger lexical scope
-handling, versioned API signatures, dataset identity adapters and reviewed PyTorch
-rules. These are not implemented or promised by the current release.
+handling, version-aware API signatures, dataset identity adapters and reviewed
+extensions to the [framework checks](docs/frameworks.md). These are follow-up areas,
+not promises of complete coverage. New rules need both positive and negative evidence.
