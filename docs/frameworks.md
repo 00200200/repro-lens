@@ -1,6 +1,6 @@
 # Framework coverage
 
-Repro Lens v0.3.0 adds R104–R110. Install the versioned release using the
+Repro Lens v0.3.0 adds R104–R110; R111–R114 are on the development branch. Install the versioned release using the
 [installation guide](../README.md#install), then run `repro-lens check --root YOUR_PROJECT`.
 The scanner needs no ML dependencies and never executes the scanned file.
 Named-dictionary resolution described below is a development addition after v0.3.0;
@@ -113,6 +113,54 @@ it to False. Recognized namespaces: `lightning`, `lightning.pytorch`,
 `pytorch_lightning`, and their `trainer`/`trainer.trainer` imports (except
 `lightning.trainer`). Fabric and `seed_everything` effects are not analyzed.
 See the [Trainer 2.6.1 source contract](https://github.com/Lightning-AI/pytorch-lightning/blob/2.6.1/src/lightning/pytorch/trainer/trainer.py#L252).
+
+## Global RNG state — R111–R114 (review)
+
+```python
+import numpy as np
+import torch
+
+np.random.shuffle(indices)  # R111 review: nothing in this file seeds NumPy's global RNG.
+torch.randn(64, 32)  # R113 review: nothing in this file calls torch.manual_seed.
+
+np.random.seed(experiment_seed)
+torch.manual_seed(experiment_seed)
+np.random.shuffle(indices)  # No finding.
+torch.randn(64, 32)  # No finding.
+```
+
+These rules look at one file as a whole. A call that draws from a library's global
+RNG is a review item when the same file contains no call that seeds that library:
+
+| Library | Uses (examples) | Seeding calls recognized |
+| --- | --- | --- |
+| NumPy (R111) | `numpy.random.rand`, `randn`, `randint`, `choice`, `shuffle`, `permutation`, `normal`, `uniform`, … (legacy global functions) | `numpy.random.seed`, `numpy.random.set_state` |
+| Python (R112) | `random.random`, `randint`, `choice`, `choices`, `sample`, `shuffle`, `uniform`, `gauss`, … | `random.seed`, `random.setstate` |
+| PyTorch (R113) | `torch.rand`, `randn`, `randint`, `randperm`, `*_like`, `bernoulli`, `multinomial`, `normal`, `poisson`, `torch.nn.init.*_` | `torch.manual_seed`, `torch.random.manual_seed`, `torch.set_rng_state`, `torch.random.set_rng_state` |
+| TensorFlow (R114) | `tf.random.normal`, `uniform`, `truncated_normal`, `shuffle`, `categorical`, `gamma`, `poisson` | `tf.random.set_seed`, `tf.compat.v1.set_random_seed` |
+
+Helpers that seed several libraries count for each of them: `seed_everything` from
+`lightning`, `lightning.pytorch`, `lightning.fabric` and `pytorch_lightning`
+(Python, NumPy, PyTorch), `transformers.set_seed` and `accelerate.utils.set_seed`
+(same three), and `keras.utils.set_random_seed` / `tf.keras.utils.set_random_seed`
+(Python, NumPy, TensorFlow). `torch.cuda.manual_seed_all` alone does not seed the
+CPU generator and is not counted.
+
+A PyTorch call with an explicit non-None `generator=` and a TensorFlow op with an
+explicit non-None `seed=` do not use the global state and are not reported: TensorFlow
+documents that an operation seed alone yields a repeatable sequence. Calls with `**`
+expansions stay silent, since the expansion may carry that argument. Generator objects
+(`np.random.default_rng(seed).shuffle`, `random.Random(seed).choice`) are method
+calls on a variable and are outside these rules; R102/R103 cover their construction.
+
+Seeding is recognized anywhere in the file, even after the use or inside another
+function, and never across files: a project that seeds in `main.py` and draws in
+`data.py` gets a review item in `data.py`. Order of execution, seeding through a
+framework's CLI or environment, and per-process seeding of DataLoader workers are not
+analyzed. Primary references: [NumPy legacy random](https://numpy.org/doc/stable/reference/random/legacy.html),
+[`random.seed`](https://docs.python.org/3/library/random.html#random.seed),
+[PyTorch reproducibility](https://docs.pytorch.org/docs/2.8/notes/randomness.html) and
+[`tf.random.set_seed`](https://www.tensorflow.org/api_docs/python/tf/random/set_seed).
 
 ## Dynamic arguments and limits
 

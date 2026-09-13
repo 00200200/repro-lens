@@ -127,6 +127,8 @@ class Scanner(ast.NodeVisitor):
         self.path = path
         self.bindings = {}
         self.findings = []
+        self.global_uses = []
+        self.seeded = set()
         self.parameters = ParameterDictionaries(tree)
         self.function_locals = {}
         pending = [symbols]
@@ -293,6 +295,9 @@ class Scanner(ast.NodeVisitor):
     def visit_Call(self, node):
         name = self.qualified(node.func)
         frameworks.check_call(node, name, self.emit, self.parameters.resolve)
+        self.seeded |= frameworks.SEEDERS.get(name, set())
+        if library := frameworks.global_consumer(node, name):
+            self.global_uses.append((node, name, library))
         kwargs = {kw.arg: kw.value for kw in node.keywords if kw.arg}
         dynamic = any(kw.arg is None for kw in node.keywords) or any(
             isinstance(arg, ast.Starred) for arg in node.args
@@ -394,6 +399,7 @@ def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Fi
         ], []
     scanner = Scanner(path, symbols, tree)
     scanner.visit(tree)
+    frameworks.report_global_rng(scanner.global_uses, scanner.seeded, scanner.emit)
     suppressions = {}
     invalid = []
     for token in tokenize.generate_tokens(io.StringIO(source).readline):
