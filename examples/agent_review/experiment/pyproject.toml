@@ -1,0 +1,8 @@
+[tool.repro-lens.verify]
+command = ["{python}", "experiment.py", "--output", "{output}"]
+inputs = ["experiment.py", "pyproject.toml", "samples.csv"]
+metrics = ["accuracy"]
+artifacts = ["predictions.csv"]
+timeout = 10
+atol = 0.0
+rtol = 0.0
