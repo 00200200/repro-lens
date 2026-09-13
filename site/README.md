@@ -26,8 +26,12 @@ package, verifies its integrity hash, and extracts only the five runtime files.
 `tools/smoke_live_checker.mjs` loads that runtime in Node, checks the engine hashes
 and confirms known findings. Live results cover the same selected APIs as the CLI;
 notebooks, wrappers and runtime seeding are not analyzed, and a clean result is not
-proof of repeatability. Browsers without module workers or WebAssembly get an error
-message and a link to install the CLI.
+proof of repeatability. If the worker cannot be created, reports an error, or does not
+answer within 120 seconds for the first check (which includes the download) or 20
+seconds afterwards, the worker is stopped, the controls are restored and the page
+suggests the CLI; the next check starts a new worker. `tests/checker_state.test.mjs`
+covers these paths with a fake page and Worker (`node --test`, also run by pytest
+when Node.js is installed). It is a JavaScript state test, not a Safari or Firefox run.
 
 The hero lets visitors switch between the three scripted edits in the
 [agent review demo](../examples/agent_review/README.md). It presents that demo's
@@ -83,3 +87,9 @@ publishes the Pages artifact. GitHub Pages must use the GitHub Actions build sou
 Only the deployment job receives Pages write and OIDC permissions. PRs cannot
 deploy. GitHub Pages serves this project's public educational content for free;
 the project offers community support and does not collect payments.
+
+**Live check deployment is not wired yet.** The gallery job must run
+`tools/fetch_pyodide.py` and `node tools/smoke_live_checker.mjs dist/gallery` after the
+gallery build and before the Pages artifact upload. Until those steps are in
+`.github/workflows/ci.yml`, CI does not validate the runtime and a deployed site shows
+that the live check could not start.

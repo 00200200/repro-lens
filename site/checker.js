@@ -12,6 +12,10 @@
   const example = source.value;
   const MAX_SOURCE = 200_000;
   const MAX_SHARE = 8_000;
+  // The first check includes downloading Python; later checks only analyze text.
+  const LOAD_TIMEOUT_MS = 120_000;
+  const CHECK_TIMEOUT_MS = 20_000;
+  const FALLBACK = "You can still install the CLI and run it locally.";
   let worker;
   let checks = 0;
   let pending;
@@ -27,25 +31,45 @@
     status.textContent = text;
   }
 
+  function stopWorker() {
+    worker?.terminate();
+    worker = undefined;
+  }
+
   function startWorker() {
     worker = new Worker("checker-worker.mjs", { type: "module" });
     worker.addEventListener("message", event => pending?.(event.data));
     worker.addEventListener("error", event => {
       event.preventDefault();
+      stopWorker();
       pending?.({ error: "The live checker could not start in this browser or build." });
-      worker.terminate();
-      worker = undefined;
     });
   }
 
-  function check(text) {
-    if (!worker) startWorker();
+  function check(text, timeout) {
     const id = ++checks;
     return new Promise(resolve => {
-      pending = data => {
-        if (data.id === undefined || data.id === id) resolve(data);
+      let timer;
+      const finish = data => {
+        clearTimeout(timer);
+        pending = undefined;
+        resolve(data);
       };
-      worker.postMessage({ id, source: text });
+      pending = data => {
+        if (data.id === undefined || data.id === id) finish(data);
+      };
+      // A stalled download or check must not hold the controls; the next check starts over.
+      timer = setTimeout(() => {
+        stopWorker();
+        finish({ error: "The live checker took too long to respond." });
+      }, timeout);
+      try {
+        if (!worker) startWorker();
+        worker.postMessage({ id, source: text });
+      } catch {
+        stopWorker();
+        finish({ error: "The live checker could not start in this browser." });
+      }
     });
   }
 
@@ -115,18 +139,24 @@
     results.setAttribute("aria-busy", "true");
     setStatus(first ? "Loading Python in your browser. This happens once per visit…" : "Checking…");
     const started = performance.now();
-    const data = await check(text);
-    results.setAttribute("aria-busy", "false");
-    run.disabled = false;
-    if (data.error) {
+    try {
+      const data = await check(text, first ? LOAD_TIMEOUT_MS : CHECK_TIMEOUT_MS);
+      if (data.error) {
+        output.replaceChildren();
+        setStatus(`${data.error} ${FALLBACK}`);
+        return;
+      }
+      render(data.result);
+      const elapsed = performance.now() - started;
+      const took = elapsed < 1000 ? `${Math.max(1, Math.round(elapsed))} ms` : `${(elapsed / 1000).toFixed(1)} s`;
+      setStatus(first ? `Checked in ${took}, including loading Python.` : `Checked in ${took}.`);
+    } catch {
       output.replaceChildren();
-      setStatus(`${data.error} You can still install the CLI and run it locally.`);
-      return;
+      setStatus(`The live check failed. ${FALLBACK}`);
+    } finally {
+      results.setAttribute("aria-busy", "false");
+      run.disabled = false;
     }
-    render(data.result);
-    const elapsed = performance.now() - started;
-    const took = elapsed < 1000 ? `${Math.max(1, Math.round(elapsed))} ms` : `${(elapsed / 1000).toFixed(1)} s`;
-    setStatus(first ? `Checked in ${took}, including loading Python.` : `Checked in ${took}.`);
   }
 
   function encode(text) {
