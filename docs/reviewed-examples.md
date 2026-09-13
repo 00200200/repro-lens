@@ -68,7 +68,7 @@ contract and synthetic cases; no external TensorFlow project was evaluated here.
 No upstream defect, framework execution result or independent adoption is claimed.
 
 To repeat, fetch the exact URLs in the manifest, verify each SHA-256, and scan the
-downloaded `.py` files with this development checkout. Record `git rev-parse HEAD`
-alongside the report: the v0.2.0 release predates these checks. The seven-pair
+downloaded `.py` files with Repro Lens v0.3.0 or a source checkout. Record the installed
+version or `git rev-parse HEAD` alongside the report. The seven-pair
 [local demo](../examples/framework_checks/) provides an offline behavioral check,
 including positive and negative examples for every new rule.
