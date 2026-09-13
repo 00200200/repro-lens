@@ -135,7 +135,7 @@ def test_artifact_mismatch_even_when_metric_matches(tmp_path):
         ("pass", "Missing"),
         ("(out / 'result.json').write_text('{\"metrics\": {}}')", "Missing"),
         ("(out / 'result.json').write_text('{\"metrics\": {\"score\": NaN}}')", "Nonfinite"),
-        ("(out / 'result.json').write_text('{\"metrics\": {\"score\": 1e999}}')", "nonfinite"),
+        ("(out / 'result.json').write_text('{\"metrics\": {\"score\": 1e999}}')", "Nonfinite"),
         ("(out / 'result.json').write_text('{\"metrics\": {\"score\": true}}')", "nonnumeric"),
         ("(out / 'result.json').write_text('bad json')", "Expecting"),
     ],
@@ -145,6 +145,73 @@ def test_failed_or_invalid_results_never_pass(tmp_path, body, reason):
     result = verify(tmp_path)
     assert result["status"] == "error"
     assert reason in result["error"]
+
+
+@pytest.mark.parametrize(
+    "payload, reason",
+    [
+        ('{"metrics":{"score":1},"runtime":{"elapsed":1e999}}', "Nonfinite JSON value"),
+        ('{"metrics":{"score":1},"runtime":{"elapsed":-1e999}}', "Nonfinite JSON value"),
+        ('{"metrics":{"score":1},"runtime":{"samples":[1e999]}}', "Nonfinite JSON value"),
+        ('{"metrics":{"score":1,"unused":1e999}}', "Nonfinite JSON value"),
+        ('{"metrics":{"score":1},"runtime":{"elapsed":NaN}}', "Nonfinite JSON value"),
+        ('{"metrics":{"score":0.1,"score":0.9}}', "Duplicate JSON key 'score'"),
+        ('{"metrics":{"score":0.9},"metrics":{"score":1}}', "Duplicate JSON key 'metrics'"),
+        (r'{"metrics":{"score":0.1,"\u0073core":0.9}}', "Duplicate JSON key 'score'"),
+        ('{"metrics":{"score":1},"runtime":{"env":"a","env":"b"}}', "Duplicate JSON key 'env'"),
+    ],
+    ids=[
+        "overflowing-runtime",
+        "negative-overflow",
+        "overflow-in-array",
+        "undeclared-overflow",
+        "runtime-nan",
+        "duplicate-metric",
+        "duplicate-metrics-object",
+        "escaped-duplicate-key",
+        "duplicate-runtime-key",
+    ],
+)
+@pytest.mark.parametrize("invalid_run", [1, 2], ids=["first-run", "second-run"])
+def test_invalid_json_retains_evidence(tmp_path, capsys, payload, reason, invalid_run):
+    valid_payload = '{"metrics":{"score":1}}'
+    experiment(
+        tmp_path,
+        f"payload = {payload!r} if out.name == 'run-{invalid_run}' else {valid_payload!r}\n"
+        "print('experiment finished')\n(out / 'result.json').write_text(payload)",
+    )
+    assert main(["verify", "--root", str(tmp_path), "--format", "json"]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "error"
+    saved = json.loads(Path(report["report_path"]).read_text())
+    assert saved == report
+    assert reason in report["error"]
+    assert len(report["runs"]) == invalid_run
+    output = Path(report["runs"][-1]["output"])
+    assert (output / "result.json").read_text() == payload
+    assert (output / "stdout.log").read_text() == "experiment finished\n"
+    if invalid_run == 1:
+        assert not (output.parent / "run-2").exists()
+    else:
+        assert report["runs"][0]["metrics"] == {"score": 1}
+
+
+def test_valid_nested_json_and_nonfinite_looking_strings_are_preserved(tmp_path):
+    runtime = {
+        "environment": {"version": "1e999"},
+        "packages": [{"version": "NaN"}, {"version": "Infinity"}],
+        "count": 10**400,
+        "elapsed": 1e-10,
+        "optional": None,
+        "enabled": True,
+    }
+    payload = json.dumps({"metrics": {"score": 0.9}, "runtime": runtime})
+    experiment(tmp_path, f"(out / 'result.json').write_text({payload!r})")
+    report = verify(tmp_path)
+    assert report["status"] == "matched"
+    assert [run["runtime"] for run in report["runs"]] == [runtime, runtime]
+    saved = json.loads(Path(report["report_path"]).read_text())
+    assert saved == report
 
 
 def test_input_mutation_invalidates_comparison(tmp_path):

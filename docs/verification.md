@@ -20,6 +20,13 @@ Call `uv sync` first. The runner does not provision environments or constrain ne
 The result JSON contains `{"metrics": {"accuracy": 0.9}}` and optionally `runtime`
 with relevant package versions. Declared metric keys must be finite numbers; boolean,
 string, NaN and Infinity values fail. At least one metric or artifact is mandatory.
+
+Object keys must be unique within each JSON object. Nonfinite numbers are rejected
+throughout the result, including runtime metadata and undeclared metrics. This includes
+exponents such as `1e999` that overflow Python's float range. These validation errors
+stop verification and preserve an error report, the original result JSON and run logs.
+The result file must not exceed 2,000,000 bytes.
+
 Numeric comparisons use `abs(a - b) <= max(atol, rtol * max(abs(a), abs(b)))`, with
 exact arithmetic on the parsed values. Integer metrics keep their full precision;
 zero tolerances require numeric equality, including for counts above `2**53`.
