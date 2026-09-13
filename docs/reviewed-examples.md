@@ -72,6 +72,6 @@ No upstream defect, framework execution result or independent adoption is claime
 To repeat, fetch the exact URLs in the manifest, verify each SHA-256, and scan the
 downloaded `.py` files with the current source checkout. Record `git rev-parse HEAD`
 alongside the report. The v0.3.0 tag predates named-dictionary resolution and reports
-R190 for the XGBoost call. The seven-pair
+R190 for the XGBoost call. The before/after
 [local demo](../examples/framework_checks/) provides an offline behavioral check,
 including positive and negative examples for every new rule.

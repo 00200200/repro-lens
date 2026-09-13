@@ -277,7 +277,7 @@ def test_framework_demo_checks_expected_results_and_detects_a_lost_warning(tmp_p
     result = subprocess.run(command, text=True, capture_output=True)
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(output.read_text())
-    assert len(report["cases"]) == 7
+    assert len(report["cases"]) == 10
     assert all(case["expected_behavior"] for case in report["cases"])
     cases = json.loads(demo.with_name("cases.json").read_text())
     cases[0]["before"] = cases[0]["after"]

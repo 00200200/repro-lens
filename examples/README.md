@@ -5,6 +5,7 @@ CLI and coding-agent skill; each links to its command, expected output and limit
 
 | I want to… | Start here | What runs | Expected result |
 | --- | --- | --- | --- |
+| Explore before/after code without installing | [Browser gallery](https://00200200.github.io/repro-lens/) | A static page with search and filters | Saved findings from the shared checker; no Python or training runs in the browser |
 | Understand why two matching runs can still hide a changed result | [Before/after demo](agent_review/) | A tiny synthetic classifier; no ML dependencies or API key | Equivalent refactor matches; changed threshold mismatches; changed tolerance needs review |
 | Check an actual model refactor | [XGBoost CPU replay](xgboost_review/) | Six small local fits, with pinned dependencies downloaded on first use | Equivalent feature selection matches; changing tree depth mismatches |
 | See which framework settings need attention | [Framework screening](framework_checks/) | Static analysis; no framework imports or training | Risky, unresolved and explicitly configured examples show different findings |
