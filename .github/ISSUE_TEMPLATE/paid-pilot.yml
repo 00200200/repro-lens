@@ -1,0 +1,51 @@
+name: Discuss a paid pilot
+description: Enquire about an ML reproducibility review or CI setup for one experiment.
+title: "[Pilot enquiry]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem at a high level. This is a public issue: do not include private source code, datasets, credentials or personal contact details.
+
+        See [pilot scope and current capabilities](https://github.com/00200200/repro-lens/blob/main/docs/support.md). Scope, price, timing and access are agreed before work starts; submitting this form does not book a service.
+  - type: dropdown
+    id: help
+    attributes:
+      label: What would help your team?
+      options:
+        - Review reproducibility risks in one experiment
+        - Compare experiment outputs before and after a refactor
+        - Set up an advisory CI check and replay contract
+        - Explore recurring reports for pull requests
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and desired outcome
+      description: What happens today, how often does it happen, and what decision should the pilot help you make?
+      placeholder: An agent refactors our training code. We need to review prediction changes against a retained baseline before merging.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Framework and execution environment
+      description: Framework and version if known, CPU or GPU, current CI, approximate run time, and whether there is an existing experiment command. A high-level description is enough.
+    validations:
+      required: true
+  - type: dropdown
+    id: commercial_interest
+    attributes:
+      label: What stage are you at?
+      options:
+        - Exploring whether this could help
+        - Interested in a paid pilot after scope and quote
+        - Evaluating recurring support after a successful pilot
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints or timing (optional)
+      description: For example, data must stay in your environment, a target review date, or a budget range you are comfortable making public.
