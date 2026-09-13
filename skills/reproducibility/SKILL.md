@@ -1,6 +1,6 @@
 ---
 name: reproducibility
-description: Audit, repair or verify reproducibility of a data-science or ML project using concrete code and execution evidence. Use when asked whether experiments can be rerun, to fix reproducibility blockers, or to prepare a reproducible experiment package.
+description: Audit or repair ML experiment reproducibility and review whether code changes preserve recorded outputs. Use for reproducibility blockers, before-and-after experiment checks, or preparing a reproducible experiment package.
 ---
 
 # Reproducibility
@@ -53,6 +53,22 @@ Keep the report and logs. `matched` supports a two-run match of declared outputs
 the recorded environment. It does not establish cross-platform reproducibility,
 evaluation validity or robustness across seeds. Failed execution, missing artifacts,
 changed inputs and unexecuted tests must remain visible.
+
+## Review a change against a baseline
+
+When the user wants an edit to preserve experiment outputs, read
+[references/change-review.md](references/change-review.md). Keep a verification report
+from before the edit, verify the changed project and compare the retained reports:
+
+```text
+python /absolute/path/to/this/skill/scripts/run.py compare /absolute/before/report.json /absolute/after/report.json --format json
+```
+
+Two matching runs after an edit do not establish agreement with the earlier result.
+Use the comparison's status, input changes and policy/environment changes in the
+review. Do not describe changed inputs as equivalent without inspecting them.
+If a valid baseline is unavailable, report that limitation rather than manufacturing
+one from the changed project.
 
 ## Return a useful result
 

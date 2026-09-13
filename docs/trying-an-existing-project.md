@@ -51,7 +51,7 @@ pre-commit. For an advisory rollout, the hook accepts the same option:
 ```yaml
 repos:
   - repo: https://github.com/00200200/repro-lens
-    rev: v0.1.1
+    rev: v0.2.0
     hooks:
       - id: repro-lens
         args: [--fail-on, error]

@@ -3,7 +3,7 @@
 Install Python 3.11+, Git and [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
 
 ```bash
-uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.1.1'
+uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.2.0'
 ```
 
 ## See a finding without installing ML libraries

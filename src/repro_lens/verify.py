@@ -18,6 +18,7 @@ import uuid
 from fractions import Fraction
 from pathlib import Path
 
+from .json_data import loads
 from .project import inside, read_policy
 
 
@@ -129,29 +130,7 @@ def load_result(run_dir: Path, config: dict) -> dict:
     if not path.is_file() or path.stat().st_size > 2_000_000:
         raise ValueError(f"Missing or oversized result JSON: {path}")
 
-    def reject_constant(value):
-        raise ValueError(f"Nonfinite JSON value {value} in {path}")
-
-    def finite_float(value):
-        number = float(value)
-        if not math.isfinite(number):
-            reject_constant(value)
-        return number
-
-    def unique_object(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"Duplicate JSON key {key!r} in {path}")
-            result[key] = value
-        return result
-
-    result = json.loads(
-        path.read_text(encoding="utf-8"),
-        parse_constant=reject_constant,
-        parse_float=finite_float,
-        object_pairs_hook=unique_object,
-    )
+    result = loads(path.read_text(encoding="utf-8"), path)
     if not isinstance(result, dict) or not isinstance(result.get("metrics", {}), dict):
         raise ValueError(f"Result must be an object with a metrics object: {path}")
     for metric in config["metrics"]:
@@ -169,6 +148,20 @@ def metrics_close(first: int | float, second: int | float, *, atol: float, rtol:
     a, b = Fraction(first), Fraction(second)
     threshold = max(Fraction(atol), Fraction(rtol) * max(abs(a), abs(b)))
     return abs(a - b) <= threshold
+
+
+def output_differences(first: dict, second: dict, config: dict) -> list[str]:
+    differences = []
+    for name in config["metrics"]:
+        a, b = first["metrics"][name], second["metrics"][name]
+        if not metrics_close(a, b, rtol=config["rtol"], atol=config["atol"]):
+            differences.append(f"Metric {name}: {a} != {b}")
+    for name in config["artifacts"]:
+        if first["artifacts_sha256"][name] != second["artifacts_sha256"][name]:
+            differences.append(f"Artifact {name}: SHA-256 differs")
+    if first["runtime"] != second["runtime"]:
+        differences.append("Reported experiment runtimes differ")
+    return differences
 
 
 def verify(root: Path) -> dict:
@@ -219,16 +212,7 @@ def verify(root: Path) -> dict:
                 raise ValueError(
                     "Declared inputs changed during verification; the comparison is invalid"
                 )
-        first, second = outputs
-        for name in config["metrics"]:
-            a, b = first["metrics"][name], second["metrics"][name]
-            if not metrics_close(a, b, rtol=config["rtol"], atol=config["atol"]):
-                report["differences"].append(f"Metric {name}: {a} != {b}")
-        for name in config["artifacts"]:
-            if first["artifacts_sha256"][name] != second["artifacts_sha256"][name]:
-                report["differences"].append(f"Artifact {name}: SHA-256 differs")
-        if first["runtime"] != second["runtime"]:
-            report["differences"].append("Reported experiment runtimes differ")
+        report["differences"] = output_differences(*outputs, config)
         report["status"] = "mismatch" if report["differences"] else "matched"
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         report["error"] = str(exc)

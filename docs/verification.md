@@ -1,5 +1,9 @@
 # Verification contract
 
+For checking an edit against an earlier experiment, retain reports from both revisions
+and use [before-and-after comparison](agent-review.md). Two runs of the current revision
+alone do not establish agreement with the earlier output.
+
 ```toml
 [tool.repro-lens.verify]
 command = ["{python}", "train.py", "--output", "{output}"]

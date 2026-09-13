@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import __version__
 from .analysis import RULES
+from .comparison import compare_reports, render_comparison
 from .project import check, render
 from .verify import verify
 
@@ -64,6 +65,12 @@ def main(argv=None):
     )
     replay.add_argument("--root", type=Path, default=Path.cwd())
     replay.add_argument("--format", choices=["text", "json"], default="text")
+    comparison = sub.add_parser(
+        "compare", help="Compare two retained verification reports without executing code"
+    )
+    comparison.add_argument("before", type=Path)
+    comparison.add_argument("after", type=Path)
+    comparison.add_argument("--format", choices=["text", "json"], default="text")
     create = sub.add_parser(
         "init", help="Create a runnable scikit-learn project in a new directory"
     )
@@ -79,6 +86,10 @@ def main(argv=None):
             destination = initialize(args.destination.resolve(), args.name)
             print(f"Created {destination}\nNext: cd {destination} && uv sync && uv run pytest")
             return 0
+        if args.command == "compare":
+            report = compare_reports(args.before, args.after)
+            print(render_comparison(report, args.format), end="")
+            return {"matched": 0, "mismatch": 1, "not_comparable": 2}[report["status"]]
         if not args.root.is_dir():
             raise ValueError(f"Project directory does not exist: {args.root}")
         if args.command == "verify":
