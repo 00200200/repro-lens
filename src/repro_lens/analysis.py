@@ -223,9 +223,13 @@ class Scanner(ast.NodeVisitor):
         self.bindings = outer
 
     def visit_Lambda(self, node):
+        # Defaults are evaluated in the enclosing scope, before parameters shadow imports.
+        for default in [*node.args.defaults, *node.args.kw_defaults]:
+            if default is not None:
+                self.visit(default)
         outer = self.bindings
         self.bindings = outer.copy()
-        for argument in ast.walk(node.args):
+        for argument in ast.iter_child_nodes(node.args):
             if isinstance(argument, ast.arg):
                 self.bindings.pop(argument.arg, None)
         self.visit(node.body)

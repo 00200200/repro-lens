@@ -40,6 +40,12 @@ parameters or assignments in a nested function, class, lambda or comprehension d
 hide an import used by the enclosing function. Actual function locals shadow outer
 imports even before assignment. Invalid scope declarations are reported as S902.
 
+Lambda default arguments are checked in the enclosing scope, following
+[Python's default argument semantics](https://docs.python.org/3/tutorial/controlflow.html#default-argument-values).
+For example, `lambda rng=random.Random(): rng` reports R103 when `random` is the
+imported module. The lambda's parameters shadow imports in its body; parameters of
+a nested lambda in a default do not hide imports used by the outer lambda.
+
 Wrappers, monkeypatches, star/dynamic imports, complex control flow and imports after
 function definitions can be missed. This is not a whole-program analyzer. Notebook
 cells and PyTorch are outside this version's coverage. Only `.py` files are inspected;
