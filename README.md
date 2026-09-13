@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="#try-the-beforeafter-demo"><b>Run the demo</b></a> ·
+  <a href="examples/README.md">Browse examples</a> ·
   <a href="#install">Install</a> ·
   <a href="#framework-checks">Framework checks</a> ·
   <a href="#coding-agents">Coding agents</a> ·
@@ -38,6 +39,8 @@ Use the CLI, an opt-in [pre-commit hook](#pre-commit), or the
 [reproducibility skill](skills/reproducibility/SKILL.md) in your coding agent.
 
 ## Try the before/after demo
+
+Want a specific workflow? [Browse examples by question, dependencies and expected result](examples/README.md).
 
 With Python 3.11+, Git and [uv](https://docs.astral.sh/uv/getting-started/installation/), run from a directory where `repro-lens` does not already exist:
 
