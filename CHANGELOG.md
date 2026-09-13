@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Check calls in function/class decorators, class bases and class keyword arguments using enclosing import bindings.
 - Resolve directly assigned, single-use framework parameter dictionaries while keeping mutations, escapes, repeated uses and unresolved scopes advisory.
 
 ## 0.3.0 — 2026-09-13

@@ -316,3 +316,48 @@ def test_string_cannot_suppress_a_finding():
 
 def test_unparseable_file_is_not_a_clean_scan():
     assert codes("def f(:") == ["S902"]
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "@configure(rng())\ndef model(rng): pass",
+        "@configure(rng())\nasync def model(rng): pass",
+        "@configure(rng())\nclass Model: pass",
+        "class Model(base(rng())): pass",
+        "class Model(Base, random=rng()): pass",
+        "class Model(Base, **options(rng())): pass",
+        "@configure(rng())\ndef rng(): pass",
+        "class rng(base(rng())): pass",
+    ],
+)
+@pytest.mark.parametrize("argument, expected", [("", ["R102"]), ("1729", [])])
+def test_definition_expressions_use_enclosing_imports(definition, argument, expected):
+    source = "from numpy.random import default_rng as rng\n" + definition.replace(
+        "rng()", f"rng({argument})", 1
+    )
+    assert codes(source) == expected
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "@configure(rng())\ndef model(): pass",
+        "@configure(rng())\nclass Model: pass",
+        "class Model(base(rng())): pass",
+        "class Model(Base, random=rng()): pass",
+    ],
+)
+def test_definition_expressions_respect_shadowed_imports(definition):
+    assert codes("from numpy.random import default_rng as rng\nrng = custom\n" + definition) == []
+
+
+def test_decorator_finding_keeps_location_and_suppression():
+    source = (
+        "from numpy.random import default_rng as rng\n"
+        "@configure(rng())  # repro-lens: ignore[R102] -- Intentional entropy.\n"
+        "def model(): pass\n"
+    )
+    active, suppressed = analyze(source, "train.py")
+    assert active == []
+    assert [(item.code, item.line, item.column) for item in suppressed] == [("R102", 2, 12)]
