@@ -21,6 +21,9 @@ Or use `pip install 'git+https://github.com/00200200/repro-lens.git@v0.1.1'` in 
 
 ## Check an existing project
 
+Start with the [advisory rollout guide](docs/trying-an-existing-project.md) to review
+findings before making them block commits.
+
 ```bash
 repro-lens check --root /path/to/project
 repro-lens check --root /path/to/project --format json

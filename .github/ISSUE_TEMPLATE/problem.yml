@@ -1,0 +1,45 @@
+name: Report a problem
+description: A false alarm, missed call, installation problem or replay failure.
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: What went wrong?
+      options:
+        - False alarm
+        - Missed call
+        - Installation or pre-commit
+        - Experiment replay
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Version and environment
+      description: Include repro-lens --version, Python version and operating system.
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: How to reproduce
+      description: Include the command and a small code or configuration example. For a finding, keep imports and relevant RNG initialization. Remove private paths and data.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+      description: Paste the diagnostic or first error. Review logs before sharing them.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: For a randomness finding, explain the intended seed or RNG policy.
+    validations:
+      required: true
