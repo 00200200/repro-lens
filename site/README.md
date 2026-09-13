@@ -88,8 +88,7 @@ Only the deployment job receives Pages write and OIDC permissions. PRs cannot
 deploy. GitHub Pages serves this project's public educational content for free;
 the project offers community support and does not collect payments.
 
-**Live check deployment is not wired yet.** The gallery job must run
-`tools/fetch_pyodide.py` and `node tools/smoke_live_checker.mjs dist/gallery` after the
-gallery build and before the Pages artifact upload. Until those steps are in
-`.github/workflows/ci.yml`, CI does not validate the runtime and a deployed site shows
-that the live check could not start.
+The gallery job runs `tools/fetch_pyodide.py` and
+`node tools/smoke_live_checker.mjs dist/gallery` after building the gallery and before
+uploading the Pages artifact. A runtime integrity failure or unexpected engine
+result fails the job and prevents deployment.
