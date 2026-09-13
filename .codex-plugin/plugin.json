@@ -1,6 +1,6 @@
 {
   "name": "repro-lens",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Audit ML reproducibility with static checks and local experiment replay.",
   "author": {
     "name": "00200200"
