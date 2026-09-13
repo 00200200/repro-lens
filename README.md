@@ -1,42 +1,40 @@
+<p align="center">
+  <img src="assets/hero.svg" alt="Repro Lens — Same experiment. What changed? Check source, replay runs, compare outputs." width="1200">
+</p>
+
+<p align="center">
+  <a href="https://github.com/00200200/repro-lens/actions/workflows/ci.yml"><img src="https://github.com/00200200/repro-lens/actions/workflows/ci.yml/badge.svg" alt="Checks"></a>
+  <a href="https://github.com/00200200/repro-lens/releases/latest"><img src="https://img.shields.io/github/v/release/00200200/repro-lens?color=64dfcf" alt="Latest release"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.11%2B-9ebcff" alt="Python 3.11 or newer"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64dfcf" alt="MIT license"></a>
+  <a href="https://github.com/00200200/repro-lens/stargazers"><img src="https://img.shields.io/github/stars/00200200/repro-lens?style=flat&amp;color=f7bb83" alt="GitHub stars"></a>
+</p>
+
+<p align="center">
+  <a href="#try-the-beforeafter-demo"><b>Run the demo</b></a> ·
+  <a href="#install">Install</a> ·
+  <a href="#framework-checks">Framework checks</a> ·
+  <a href="#coding-agents">Coding agents</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
+</p>
+
 # Repro Lens
 
-[![Checks](https://github.com/00200200/repro-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/00200200/repro-lens/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/00200200/repro-lens)](https://github.com/00200200/repro-lens/releases/latest)
+**Your refactor runs twice. Did it keep the same results?**
 
-Catch reproducibility risks before a commit. Check whether a coding agent's changes altered experiment outputs.
+Catch reproducibility risks before a commit, replay an experiment, and compare
+outputs before and after a change. Built for ML developers and coding agents.
 
-Repro Lens includes a CLI, a pre-commit hook, a reproducibility skill for coding agents, and a small scikit-learn project template. The checker needs only Python 3.11+; it never imports the project it scans.
+| Command | Question it answers | Evidence |
+| --- | --- | --- |
+| **`check`** | Is there a known reproducibility risk in this code? | Static findings with file locations; scanned code is never imported |
+| **`verify`** | Do two runs produce matching declared outputs? | Metrics, artifact hashes, commands and logs |
+| **`compare`** | Did the edit preserve the baseline outputs? | Differences between saved reports, including changes that need separate review |
 
-## Framework checks
-
-Static checks cover selected APIs in **scikit-learn, XGBoost, LightGBM, PyTorch,
-TensorFlow and Lightning**, plus Python and NumPy RNG construction. Install none
-of these frameworks to scan their code.
-
-| Framework | What gets checked |
-| --- | --- |
-| scikit-learn | Explicit randomness control in supported splits, estimators and datasets |
-| XGBoost | `gblinear` with the nondeterministic `shotgun` updater, even with a seed |
-| LightGBM | CPU determinism, device choice and forced histogram configuration |
-| PyTorch | DataLoader/random_split generators, cuDNN benchmarking and deterministic mode |
-| TensorFlow | Generators explicitly initialized from nondeterministic state |
-| Lightning | Trainer determinism, warning-only mode and benchmarking |
-
-Known risks are warnings; settings that may be controlled elsewhere are nonblocking
-`review` items. Native boosting `train`/`cv` calls accept inline parameter dictionaries.
-The development checkout also resolves simple dictionaries assigned once and used
-once in the same block of code.
-Aliases and justified suppressions work across frameworks. See the exact
-[API coverage, examples and limits](docs/frameworks.md).
-
-Run the dependency-free [framework examples](examples/framework_checks/):
-
-```bash
-uv run --no-dev python examples/framework_checks/demo.py
-```
-
-The seven framework checks are included in v0.3.0. Use the versioned installation
-below, or `uv tool install .` from this checkout for the newer named-dictionary support.
+The static checker needs **Python 3.11+**, with **no ML dependencies or API key**.
+Replay runs your configured experiment and needs its dependencies.
+Use the CLI, an opt-in [pre-commit hook](#pre-commit), or the
+[reproducibility skill](skills/reproducibility/SKILL.md) in your coding agent.
 
 ## Try the before/after demo
 
@@ -93,6 +91,37 @@ train_test_split(X, y)  # R101: no explicit random_state
 The checker recognizes imported aliases, skips non-shuffled splits, and reports dynamic arguments as unresolved. Warnings can be justified with an inline comment. All rules and their limits are described in [docs/rules.md](docs/rules.md).
 
 Explicit seed expressions are accepted without evaluating their values. A clean scan is a useful review signal, not proof that the experiment is reproducible.
+
+## Framework checks
+
+Static checks cover selected APIs in **scikit-learn, XGBoost, LightGBM, PyTorch,
+TensorFlow and Lightning**, plus Python and NumPy RNG construction. Install none
+of these frameworks to scan their code.
+
+| Framework | What gets checked |
+| --- | --- |
+| scikit-learn | Explicit randomness control in supported splits, estimators and datasets |
+| XGBoost | `gblinear` with the nondeterministic `shotgun` updater, even with a seed |
+| LightGBM | CPU determinism, device choice and forced histogram configuration |
+| PyTorch | DataLoader/random_split generators, cuDNN benchmarking and deterministic mode |
+| TensorFlow | Generators explicitly initialized from nondeterministic state |
+| Lightning | Trainer determinism, warning-only mode and benchmarking |
+
+Known risks are warnings; settings that may be controlled elsewhere are nonblocking
+`review` items. Native boosting `train`/`cv` calls accept inline parameter dictionaries.
+The development checkout also resolves simple dictionaries assigned once and used
+once in the same block of code.
+Aliases and justified suppressions work across frameworks. See the exact
+[API coverage, examples and limits](docs/frameworks.md).
+
+Run the dependency-free [framework examples](examples/framework_checks/):
+
+```bash
+uv run --no-dev python examples/framework_checks/demo.py
+```
+
+The seven framework checks are included in v0.3.0. Use the versioned installation
+above, or `uv tool install .` from this checkout for the newer named-dictionary support.
 
 ## Try a complete experiment
 
