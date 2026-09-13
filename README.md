@@ -7,6 +7,28 @@ Catch missing seeds before a commit. Check whether a coding agent's changes alte
 
 Repro Lens includes a CLI, a pre-commit hook, a reproducibility skill for coding agents, and a small scikit-learn project template. The checker needs only Python 3.11+; it never imports the project it scans.
 
+## Try the before/after demo
+
+With Python 3.11+, Git and [uv](https://docs.astral.sh/uv/getting-started/installation/), run from a directory where `repro-lens` does not already exist:
+
+```bash
+git clone https://github.com/00200200/repro-lens.git
+cd repro-lens
+uv run --no-dev python examples/agent_review/demo.py
+```
+
+```text
+Scenario             verify     compare with baseline
+baseline             matched    -
+refactor             matched    matched
+changed threshold    matched    mismatch
+changed tolerance    matched    not_comparable
+```
+
+All four variants reproduce their own outputs. The changed threshold still disagrees with the baseline. Changing the tolerance requires a separate review.
+
+The [demo](examples/agent_review/) uses a tiny synthetic classifier and scripted edits. It runs without ML dependencies or an API key and retains the actual reports. To check a real coding agent's work, use the [agent workflow](docs/agent-review.md).
+
 ## Install
 
 With [uv](https://docs.astral.sh/uv/getting-started/installation/):

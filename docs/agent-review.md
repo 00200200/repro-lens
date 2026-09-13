@@ -9,6 +9,8 @@ coding agent handles code inspection, edits and interpretation. Repro Lens suppl
 the checks and evidence; it does not start a model service. Report comparison is
 available from v0.2.0 and accepts complete v0.1.x verification reports.
 
+For a runnable example, try the [before/after demo](../examples/agent_review/). It exercises matching outputs, changed predictions and a changed tolerance using scripted edits and the same comparison engine. No ML libraries or API key are needed.
+
 ## Ask your coding agent
 
 Load [the reproducibility skill](../skills/reproducibility/SKILL.md) in an agent that

@@ -26,6 +26,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv build
+      - name: Validate the before/after demo
+        run: uv run python examples/agent_review/demo.py
       - name: Validate a generated experiment
         run: |
           uv run repro-lens init /tmp/repro-lens-example --name ci_experiment
@@ -37,5 +39,7 @@ jobs:
         if: always()
         with:
           name: evidence-${{ matrix.python }}
-          path: /tmp/repro-lens-example/.repro-lens/
+          path: |
+            /tmp/repro-lens-example/.repro-lens/
+            .repro-lens/agent-demo/
           include-hidden-files: true
