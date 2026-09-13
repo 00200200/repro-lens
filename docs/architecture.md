@@ -24,4 +24,4 @@ This documentation review informed the scope; it is not a comparative accuracy b
 
 Static screening never imports target code or runs training. Replay is an explicit command and is not a sandbox. The agent interprets evidence and works within the user's requested scope. Experiment policy lives in pyproject.toml; there is no mandatory folder layout for existing projects.
 
-The current AST implementation deliberately stops short of full Python data-flow analysis. Improving lexical scope handling, notebook locations and reviewed framework rules are follow-up work. Every expansion needs passing examples as well as violations.
+The current AST implementation deliberately stops short of full Python data-flow analysis. Improving lexical scope handling, notebook execution order and reviewed framework rules are follow-up work. Every expansion needs passing examples as well as violations.

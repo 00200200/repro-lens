@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Check Jupyter notebook code cells and report findings by cell and line. IPython magics and shell commands are skipped; an invalid cell is reported without stopping the rest of the notebook. The pre-commit hook now passes staged `.ipynb` files.
 - Check calls in function/class decorators, class bases and class keyword arguments using enclosing import bindings.
 - Resolve directly assigned, single-use framework parameter dictionaries while keeping mutations, escapes, repeated uses and unresolved scopes advisory.
 
