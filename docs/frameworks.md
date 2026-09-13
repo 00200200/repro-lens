@@ -1,8 +1,10 @@
 # Framework coverage
 
-The development version adds R104–R110. They are not in the published v0.2.0 tag.
-Run `uv tool install .` from this checkout, then `repro-lens check --root YOUR_PROJECT`.
+Repro Lens v0.3.0 adds R104–R110. Install the versioned release using the
+[installation guide](../README.md#install), then run `repro-lens check --root YOUR_PROJECT`.
 The scanner needs no ML dependencies and never executes the scanned file.
+Named-dictionary resolution described below is a development addition after v0.3.0;
+use `uv tool install .` from the current checkout to try it.
 
 These are selected API checks, not complete framework support. `warning` means a
 documented source-level risk, not an observed output mismatch. `review` is advisory

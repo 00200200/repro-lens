@@ -23,8 +23,9 @@ of these frameworks to scan their code.
 | Lightning | Trainer determinism, warning-only mode and benchmarking |
 
 Known risks are warnings; settings that may be controlled elsewhere are nonblocking
-`review` items. Native boosting `train`/`cv` calls accept inline parameter dictionaries
-and simple dictionaries assigned once and used once in the same block of code.
+`review` items. Native boosting `train`/`cv` calls accept inline parameter dictionaries.
+The development checkout also resolves simple dictionaries assigned once and used
+once in the same block of code.
 Aliases and justified suppressions work across frameworks. See the exact
 [API coverage, examples and limits](docs/frameworks.md).
 
@@ -34,8 +35,8 @@ Run the dependency-free [framework examples](examples/framework_checks/):
 uv run --no-dev python examples/framework_checks/demo.py
 ```
 
-These checks are available on the current development branch; the `v0.2.0` tag below
-predates the framework expansion. Use `uv tool install .` from this checkout to try them.
+The seven framework checks are included in v0.3.0. Use the versioned installation
+below, or `uv tool install .` from this checkout for the newer named-dictionary support.
 
 ## Try the before/after demo
 
@@ -64,10 +65,10 @@ The [demo](examples/agent_review/) uses a tiny synthetic classifier and scripted
 With [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```bash
-uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.2.0'
+uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.3.0'
 ```
 
-Or use `pip install 'git+https://github.com/00200200/repro-lens.git@v0.2.0'` in a virtual environment. Both commands require Git. No NumPy, scikit-learn or API key is needed for static checks.
+Or use `pip install 'git+https://github.com/00200200/repro-lens.git@v0.3.0'` in a virtual environment. Both commands require Git. No NumPy, scikit-learn or API key is needed for static checks.
 
 [Walk through a complete example](docs/quickstart.md), or scan a project you already have:
 
@@ -117,7 +118,7 @@ Add this to `.pre-commit-config.yaml`. [pre-commit](https://pre-commit.com/#inst
 ```yaml
 repos:
   - repo: https://github.com/00200200/repro-lens
-    rev: v0.2.0
+    rev: v0.3.0
     hooks:
       - id: repro-lens
 ```

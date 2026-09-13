@@ -16,7 +16,7 @@ outputs. Use `notebooks/` for exploration; move reusable transformations into `s
 Install Repro Lens to check and replay this experiment:
 
 ```bash
-uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.2.0'
+uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.3.0'
 repro-lens check
 repro-lens verify
 git init
