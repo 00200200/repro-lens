@@ -8,7 +8,7 @@ import math
 import re
 from pathlib import Path
 
-from .json_data import loads
+from .json_data import loads, same_json
 from .verify import output_differences, read_verify_config
 
 REPORT_LIMIT = 8_000_000
@@ -84,11 +84,13 @@ def read_report(path: Path) -> tuple[dict, str]:
     return report, hashlib.sha256(raw).hexdigest()
 
 
-def changed_fields(before: dict, after: dict) -> dict:
+def changed_fields(before: dict, after: dict, *, metadata: bool = False) -> dict:
     return {
         name: {"before": before.get(name), "after": after.get(name)}
         for name in sorted(before.keys() | after.keys())
-        if name not in before or name not in after or before[name] != after[name]
+        if name not in before
+        or name not in after
+        or (not same_json(before[name], after[name]) if metadata else before[name] != after[name])
     }
 
 
@@ -97,9 +99,9 @@ def compare_reports(before_path: Path, after_path: Path) -> dict:
     after, after_hash = read_report(after_path)
     before_inputs, after_inputs = before["inputs_sha256"], after["inputs_sha256"]
     policy_changes = changed_fields(before["configuration"], after["configuration"])
-    environment_changes = changed_fields(before["environment"], after["environment"])
+    environment_changes = changed_fields(before["environment"], after["environment"], metadata=True)
     first_runtime, second_runtime = before["runs"][0]["runtime"], after["runs"][0]["runtime"]
-    if first_runtime != second_runtime:
+    if not same_json(first_runtime, second_runtime):
         environment_changes["experiment_runtime"] = {
             "before": first_runtime,
             "after": second_runtime,

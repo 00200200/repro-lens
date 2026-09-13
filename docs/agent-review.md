@@ -63,6 +63,8 @@ Changing tolerances, declared metrics/artifacts, input patterns, command, timeou
 result filename produces `not_comparable`. So do differences in the recorded runner
 environment or self-reported experiment runtime metadata. This strict contract avoids
 using a relaxed tolerance or a dropped output to make a change appear to pass.
+Metadata comparison preserves JSON value types: `true`, `1` and `1.0` are distinct.
+Numeric metrics still use the documented tolerance formula.
 
 ## Comparison limits
 

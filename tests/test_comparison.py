@@ -162,6 +162,23 @@ def test_changed_recorded_environment_requires_review(tmp_path, field):
     assert field in result["environment_changes"]
 
 
+def test_boolean_runtime_metadata_is_not_equal_to_a_numeric_value(tmp_path):
+    before, after = recorded_report(), recorded_report()
+    for run in before["runs"]:
+        run["runtime"] = {"deterministic": True}
+    for run in after["runs"]:
+        run["runtime"] = {"deterministic": 1}
+    assert compare_pair(tmp_path, before, after)["status"] == "not_comparable"
+
+
+def test_runtime_metadata_types_must_agree_within_a_matched_report(tmp_path):
+    report = recorded_report()
+    report["runs"][0]["runtime"] = {"deterministic": True}
+    report["runs"][1]["runtime"] = {"deterministic": 1}
+    with pytest.raises(ValueError, match="contradict"):
+        read_report(save(tmp_path / "report.json", report))
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

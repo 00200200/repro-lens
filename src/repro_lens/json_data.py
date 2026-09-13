@@ -6,6 +6,16 @@ import json
 import math
 
 
+def same_json(first: object, second: object) -> bool:
+    """Compare metadata without Python's True == 1 or 1 == 1.0 coercions."""
+    try:
+        return json.dumps(first, sort_keys=True, allow_nan=False) == json.dumps(
+            second, sort_keys=True, allow_nan=False
+        )
+    except RecursionError as exc:
+        raise ValueError("JSON metadata nesting is too deep to compare") from exc
+
+
 def loads(text: str, source: object) -> object:
     def reject_constant(value):
         raise ValueError(f"Nonfinite JSON value {value} in {source}")

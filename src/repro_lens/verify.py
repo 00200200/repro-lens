@@ -18,7 +18,7 @@ import uuid
 from fractions import Fraction
 from pathlib import Path
 
-from .json_data import loads
+from .json_data import loads, same_json
 from .project import inside, read_policy
 
 
@@ -159,7 +159,7 @@ def output_differences(first: dict, second: dict, config: dict) -> list[str]:
     for name in config["artifacts"]:
         if first["artifacts_sha256"][name] != second["artifacts_sha256"][name]:
             differences.append(f"Artifact {name}: SHA-256 differs")
-    if first["runtime"] != second["runtime"]:
+    if not same_json(first["runtime"], second["runtime"]):
         differences.append("Reported experiment runtimes differ")
     return differences
 
