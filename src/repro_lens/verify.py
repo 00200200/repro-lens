@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 import uuid
+from fractions import Fraction
 from pathlib import Path
 
 from .project import inside, read_policy
@@ -136,12 +137,19 @@ def load_result(run_dir: Path, config: dict) -> dict:
         raise ValueError(f"Result must be an object with a metrics object: {path}")
     for metric in config["metrics"]:
         value = result.get("metrics", {}).get(metric)
-        if type(value) not in (float, int) or not math.isfinite(value):
+        if type(value) not in (float, int) or (type(value) is float and not math.isfinite(value)):
             raise ValueError(f"Missing, nonnumeric or nonfinite metric {metric!r}: {path}")
     for artifact in config["artifacts"]:
         if not inside(run_dir, run_dir / artifact).is_file():
             raise ValueError(f"Missing artifact: {artifact}")
     return result
+
+
+def metrics_close(first: int | float, second: int | float, *, atol: float, rtol: float) -> bool:
+    # Preserve integer precision and avoid overflow in the tolerance calculation.
+    a, b = Fraction(first), Fraction(second)
+    threshold = max(Fraction(atol), Fraction(rtol) * max(abs(a), abs(b)))
+    return abs(a - b) <= threshold
 
 
 def verify(root: Path) -> dict:
@@ -195,7 +203,7 @@ def verify(root: Path) -> dict:
         first, second = outputs
         for name in config["metrics"]:
             a, b = first["metrics"][name], second["metrics"][name]
-            if not math.isclose(a, b, rel_tol=config["rtol"], abs_tol=config["atol"]):
+            if not metrics_close(a, b, rtol=config["rtol"], atol=config["atol"]):
                 report["differences"].append(f"Metric {name}: {a} != {b}")
         for name in config["artifacts"]:
             if first["artifacts_sha256"][name] != second["artifacts_sha256"][name]:
