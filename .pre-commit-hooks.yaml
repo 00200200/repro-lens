@@ -4,7 +4,7 @@
   language: python
   language_version: python3
   types: [file]
-  files: '\.(py|toml|lock)$'
+  files: '\.(py|ipynb|toml|lock)$'
   require_serial: true
   always_run: true
   description: Import-aware Python screening and explicit project policy checks; never runs training.

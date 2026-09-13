@@ -6,12 +6,16 @@ import os
 import subprocess
 import tokenize
 import tomllib
+from dataclasses import replace
 from pathlib import Path
 
 from .analysis import Finding, analyze
+from .notebooks import notebook_source
 
+SUFFIXES = {".py", ".ipynb"}
 SKIP = {
     ".git",
+    ".ipynb_checkpoints",
     ".venv",
     "venv",
     "__pycache__",
@@ -83,9 +87,11 @@ def paths_to_scan(root: Path, selected: list[str], exclude: list[str]):
             candidates = []
             for directory, children, files in os.walk(root):
                 children[:] = [name for name in children if name not in SKIP]
-                candidates.extend(Path(directory) / name for name in files if name.endswith(".py"))
+                candidates.extend(
+                    Path(directory) / name for name in files if Path(name).suffix in SUFFIXES
+                )
     for path in sorted(set(candidates)):
-        if not path.is_file() or path.suffix != ".py":
+        if not path.is_file() or path.suffix not in SUFFIXES:
             continue
         try:
             relative = inside(root, path).relative_to(root).as_posix()
@@ -94,6 +100,32 @@ def paths_to_scan(root: Path, selected: list[str], exclude: list[str]):
         if set(Path(relative).parts) & SKIP or any(fnmatch.fnmatch(relative, x) for x in exclude):
             continue
         yield path, relative
+
+
+def analyze_notebook(path: Path, relative: str) -> tuple[list[Finding], list[Finding]]:
+    source, locations, invalid = notebook_source(path.read_text(encoding="utf-8"))
+    active, ignored = analyze(source, relative)
+
+    def in_cell(finding: Finding) -> Finding:
+        if not 1 <= finding.line <= len(locations):
+            return finding  # A whole-notebook error without a cell location.
+        cell, line = locations[finding.line - 1]
+        return replace(finding, cell=cell, line=line)
+
+    errors = [
+        Finding(
+            relative,
+            line,
+            1,
+            "S902",
+            "error",
+            f"Cell is not valid Python and was not checked: {message}",
+            "Fix the cell or exclude the notebook; the other cells were still checked.",
+            cell=cell,
+        )
+        for cell, line, message in invalid
+    ]
+    return [in_cell(f) for f in active] + errors, [in_cell(f) for f in ignored]
 
 
 def check(root: Path, selected: list[str] | None = None) -> dict:
@@ -162,17 +194,20 @@ def check(root: Path, selected: list[str] | None = None) -> dict:
     for path, relative in paths_to_scan(root, selected or [], policy.get("exclude", [])):
         count += 1
         try:
-            with tokenize.open(path) as handle:
-                active, ignored = analyze(handle.read(), relative)
+            if path.suffix == ".ipynb":
+                active, ignored = analyze_notebook(path, relative)
+            else:
+                with tokenize.open(path) as handle:
+                    active, ignored = analyze(handle.read(), relative)
             findings.extend(active)
             suppressed.extend(ignored)
-        except (OSError, UnicodeError, SyntaxError) as exc:
+        except (OSError, UnicodeError, SyntaxError, ValueError) as exc:
             findings.append(
                 Finding(
                     relative, 1, 1, "S902", "error", str(exc), "Restore readable Python source."
                 )
             )
-    findings.sort(key=lambda f: (f.path, f.line, f.code))
+    findings.sort(key=lambda f: (f.path, f.cell or 0, f.line, f.code))
     return {
         "schema_version": 1,
         "kind": "static_check",
@@ -185,7 +220,9 @@ def check(root: Path, selected: list[str] | None = None) -> dict:
             "Only documented imported APIs are inspected; wrappers and general data flow "
             "are not resolved.",
             "Explicit seed expressions are accepted but their runtime values are not proven.",
-            "Global RNG state, notebooks, training execution and data leakage are not analyzed.",
+            "Notebook code cells are read in file order; IPython magics and shell lines are "
+            "skipped, and execution order and outputs are not analyzed.",
+            "Global RNG state, training execution and data leakage are not analyzed.",
             "Framework checks cover only the APIs and conditions listed in docs/frameworks.md.",
         ],
     }
@@ -202,12 +239,13 @@ def render(report: dict, format_: str) -> str:
         lines.append(f"Evidence: {report.get('report_path', '(stdout)')}")
         return "\n".join(lines) + "\n"
     lines = [
-        f"Repro Lens — {report['files_checked']} Python files checked",
+        f"Repro Lens — {report['files_checked']} Python files and notebooks checked",
         report["assurance"],
         "",
     ]
     for f in report["findings"]:
-        line = f"{f['path']}:{f['line']}:{f['column']} {f['code']} [{f['severity']}] {f['message']}"
+        where = f"{f['path']}:cell {f['cell']}" if "cell" in f else f["path"]
+        line = f"{where}:{f['line']}:{f['column']} {f['code']} [{f['severity']}] {f['message']}"
         lines.extend([f"- {line}" if format_ == "markdown" else line, f"  {f['suggestion']}"])
     if not report["findings"]:
         lines.append("No findings from the enabled checks.")

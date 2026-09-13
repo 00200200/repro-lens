@@ -145,7 +145,7 @@ validity is not type-checked; documented boolean options are recognized as Pytho
 more limited expansion handling.
 
 All new rules share existing import/scope handling, exclusions, CLI/hook/skill outputs
-and justified [suppressions](rules.md). Only `.py` files are discovered. Framework
+and justified [suppressions](rules.md). Only `.py` and `.ipynb` files are discovered. Framework
 versions are not detected, and these references are not a compatibility certification
 across releases. Passing snippets and source reviews are maintainer validation, not
 an independent false-positive benchmark or a SOTA result.

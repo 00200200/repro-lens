@@ -28,7 +28,8 @@ python /absolute/path/to/this/skill/scripts/run.py check --root /absolute/projec
 The checker reads Python and configuration without importing the target. Inspect
 findings in context. A `review` item means the scanner could not decide, not proof of
 a bug. Zero findings means only that supported checks found nothing. Mention coverage
-gaps such as notebooks, wrappers, frameworks or external state when relevant.
+gaps such as notebook execution order, wrappers, frameworks or external state when
+relevant. Notebook findings name a cell number and a line within that cell.
 
 ## Repair or verify within scope
 
