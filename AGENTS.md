@@ -14,3 +14,9 @@ Keep generated data/models and local evidence out of source control except tiny
 deliberately versioned fixtures. Document new limits alongside new capabilities.
 
 Use `uv run pytest`, `uv run ruff check .` and `uv run ruff format --check .`.
+
+## Community support
+
+Keep Repro Lens free and community-supported. Do not add paid pilots, consulting
+offers, pricing, donation links, GitHub Sponsors configuration or payment forms.
+The maintainer does not want to collect money through this project.

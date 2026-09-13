@@ -1,50 +1,30 @@
-# Support Repro Lens and discuss a paid pilot
+# Community support
 
-Repro Lens is MIT-licensed and free to use, including in commercial projects.
-Bug reports and contributions are welcome through the usual GitHub issues and PRs.
+Repro Lens is free and open source under the MIT license.
+Questions, bug reports and contributions are welcome on GitHub.
 
-## Need help reviewing an ML experiment?
+## Get help
 
-If your team needs to know whether a refactor or an agent's edit changed experiment
-outputs, you can [enquire about a paid pilot](https://github.com/00200200/repro-lens/issues/new?template=paid-pilot.yml).
-Start with one experiment and a concrete decision you need to make.
+Start with the [quickstart](quickstart.md) or the
+[runnable before/after example](../examples/agent_review/). For supported APIs
+and known limits, see [framework coverage](frameworks.md).
 
-A proposed pilot can cover:
+If you get stuck, [open an issue](https://github.com/00200200/repro-lens/issues/new)
+with the command you ran, your Python and Repro Lens versions, and the expected
+and actual result. For a suspected bug, include a minimal example others can run.
 
-| Work | Deliverable to agree before starting |
-| --- | --- |
-| Review one Python training entry point | A short report separating known static risks, unresolved settings and checks requiring execution |
-| Define a replay contract | Declared inputs, metrics, artifact hashes, environment details and tolerances chosen with the project owner |
-| Review a refactor against a baseline | Saved `verify` reports and a `compare` result explaining changed outputs or why the runs cannot be compared |
-| Set up an advisory CI check | A reviewed workflow and handover notes describing which findings block a change and which require human review |
+GitHub issues are public. Remove credentials, private datasets, personal details
+and confidential source code before posting. A small synthetic example is often
+enough to investigate a problem.
 
-See the [runnable before/after example](../examples/agent_review/) for the evidence
-the tool can produce today, and the [framework coverage](frameworks.md) for supported
-APIs. A clean scan or two matching runs does not establish scientific validity.
+Support is provided by the community as time allows. There is no guaranteed
+response time.
 
-The enquiry is an initial scoping conversation. Feasibility, deliverables, price,
-timing and access arrangements are agreed before any paid work starts. There is
-currently no hosted Repro Lens service or subscription checkout.
+## Help improve the project
 
-### How to enquire
+Useful contributions include reproducible bug reports, documentation corrections,
+examples and reviewed fixes. Read [CONTRIBUTING.md](../CONTRIBUTING.md) before
+opening a pull request.
 
-Use the [pilot enquiry form](https://github.com/00200200/repro-lens/issues/new?template=paid-pilot.yml)
-to describe the framework, the recurring problem and the result you need. GitHub
-issues are public: describe private projects at a high level and keep source code,
-datasets, credentials and personal contact details out of the form. An appropriate
-private channel can be agreed before sharing restricted material.
-
-Execution, if needed, is scoped to an agreed environment and compute budget.
-The static checker does not run your project; `verify` explicitly runs the configured
-command. The [verification contract](verification.md) explains what is recorded.
-
-## Sponsorship
-
-The repository's [funding configuration](../.github/FUNDING.yml) is prepared for
-GitHub Sponsors account `00200200`. Sponsorship payments are not available yet;
-the maintainer's Sponsors profile still needs activation. This page will be updated
-with a working payment link once it is live.
-
-Sponsorship would support maintenance, regression cases, framework coverage and
-practical examples. A paid pilot has a separately agreed scope; sponsorship does
-not purchase a particular fix, review outcome or support deadline.
+When proposing a new check, include both a failure case and valid code that the
+check should leave alone. This helps keep findings useful and false alarms low.
