@@ -1,5 +1,6 @@
 import json
 import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -36,8 +37,6 @@ def test_two_fresh_processes_match_and_leave_evidence(tmp_path):
     )
     result = verify(tmp_path)
     assert result["status"] == "matched"
-    from pathlib import Path
-
     dirs = [Path(run["output"]) for run in result["runs"]]
     assert dirs[0] != dirs[1]
     assert (dirs[0] / "pid.txt").read_text() != (dirs[1] / "pid.txt").read_text()
@@ -53,6 +52,66 @@ def test_nondeterminism_is_detected(tmp_path):
     result = verify(tmp_path)
     assert result["status"] == "mismatch"
     assert "score" in result["differences"][0]
+
+
+@pytest.mark.parametrize(
+    "first, second, extra, expected",
+    [
+        (2**53, 2**53 + 1, "", "mismatch"),
+        (-(2**53), -(2**53 + 1), "", "mismatch"),
+        (2**53 + 1, float(2**53), "", "mismatch"),
+        (10**400, 10**400, "", "matched"),
+        (10**400, 10**400 + 1, "", "mismatch"),
+        (10**400, 10**400 + 1, "atol=1", "matched"),
+        (10**400, 10**400 + 2, "atol=1", "mismatch"),
+        (10.0, 10.125, "atol=0.125", "matched"),
+        (10.0, 10.25, "atol=0.125", "mismatch"),
+        (100, 101, "rtol=0.01", "matched"),
+        (101, 100, "rtol=0.01", "matched"),
+        (100, 102, "rtol=0.01", "mismatch"),
+        (10**400, 2 * 10**400, "rtol=0.5", "matched"),
+        (10**400, 3 * 10**400, "rtol=0.5", "mismatch"),
+        (1.7e308, -1.7e308, "rtol=1.1", "mismatch"),
+        (0.0, 5e-324, "rtol=0.75", "mismatch"),
+        (1, 1.0, "", "matched"),
+        (0, -0.0, "", "matched"),
+    ],
+    ids=[
+        "adjacent-large-integers",
+        "negative-large-integers",
+        "mixed-integer-and-float",
+        "equal-beyond-float-range",
+        "different-beyond-float-range",
+        "absolute-tolerance-boundary-large",
+        "absolute-tolerance-exceeded-large",
+        "absolute-tolerance-boundary-float",
+        "absolute-tolerance-exceeded-float",
+        "relative-tolerance",
+        "relative-tolerance-symmetric",
+        "relative-tolerance-exceeded",
+        "relative-tolerance-boundary-large",
+        "relative-tolerance-exceeded-large",
+        "float-arithmetic-overflow",
+        "float-arithmetic-underflow",
+        "equal-mixed-types",
+        "signed-zero",
+    ],
+)
+def test_metric_comparison_preserves_precision(tmp_path, first, second, extra, expected):
+    experiment(
+        tmp_path,
+        f"""
+    score = {first!r} if out.name == 'run-1' else {second!r}
+    (out / 'result.json').write_text(json.dumps({{'metrics': {{'score': score}}}}))
+    """,
+        extra=extra,
+    )
+    result = verify(tmp_path)
+    assert result["status"] == expected
+    assert [run["metrics"]["score"] for run in result["runs"]] == [first, second]
+    saved = json.loads(Path(result["report_path"]).read_text())
+    assert saved["status"] == expected
+    assert [run["metrics"]["score"] for run in saved["runs"]] == [first, second]
 
 
 def test_artifact_mismatch_even_when_metric_matches(tmp_path):
@@ -76,6 +135,7 @@ def test_artifact_mismatch_even_when_metric_matches(tmp_path):
         ("pass", "Missing"),
         ("(out / 'result.json').write_text('{\"metrics\": {}}')", "Missing"),
         ("(out / 'result.json').write_text('{\"metrics\": {\"score\": NaN}}')", "Nonfinite"),
+        ("(out / 'result.json').write_text('{\"metrics\": {\"score\": 1e999}}')", "nonfinite"),
         ("(out / 'result.json').write_text('{\"metrics\": {\"score\": true}}')", "nonnumeric"),
         ("(out / 'result.json').write_text('bad json')", "Expecting"),
     ],

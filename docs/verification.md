@@ -20,8 +20,13 @@ Call `uv sync` first. The runner does not provision environments or constrain ne
 The result JSON contains `{"metrics": {"accuracy": 0.9}}` and optionally `runtime`
 with relevant package versions. Declared metric keys must be finite numbers; boolean,
 string, NaN and Infinity values fail. At least one metric or artifact is mandatory.
-Numeric comparisons use math.isclose; artifacts use exact SHA-256. Undeclared metrics
-are not compared. Each input glob must match at least one file.
+Numeric comparisons use `abs(a - b) <= max(atol, rtol * max(abs(a), abs(b)))`, with
+exact arithmetic on the parsed values. Integer metrics keep their full precision;
+zero tolerances require numeric equality, including for counts above `2**53`.
+Decimal literals in JSON and TOML still undergo Python's usual binary floating-point
+rounding during parsing; comparison introduces no further rounding. Artifacts use
+exact SHA-256. Undeclared metrics are not compared. Each input glob must match at
+least one file.
 
 Inputs/artifacts must remain inside their project/output roots; escaping symlinks are
 rejected. Inputs are hashed before and after each run. The runner does not prove that
