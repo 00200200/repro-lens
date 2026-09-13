@@ -13,6 +13,10 @@ and use [verify/compare](agent-review.md) to collect evidence from an authorized
 
 ## XGBoost — R104
 
+For actual CPU training and before/after output checks, run the
+[XGBoost replay example](../examples/xgboost_review/). It uses the shared
+`verify`/`compare` engine and a committed synthetic dataset.
+
 ```python
 import xgboost as xgb
 

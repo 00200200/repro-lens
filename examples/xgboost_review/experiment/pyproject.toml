@@ -1,0 +1,18 @@
+[project]
+name = "xgboost-review-example"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "numpy==2.2.6",
+    "xgboost-cpu==3.0.2; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "xgboost==3.0.2; sys_platform != 'linux' or platform_machine != 'x86_64'",
+]
+
+[tool.repro-lens.verify]
+command = ["uv", "run", "--locked", "--no-sync", "python", "train.py", "--output", "{output}"]
+inputs = ["train.py", "config.toml", "samples.csv", "pyproject.toml", "uv.lock"]
+metrics = ["training_rmse"]
+artifacts = ["predictions.csv"]
+timeout = 60
+atol = 0.0
+rtol = 0.0
