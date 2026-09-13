@@ -3,9 +3,38 @@
 [![Checks](https://github.com/00200200/repro-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/00200200/repro-lens/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/00200200/repro-lens)](https://github.com/00200200/repro-lens/releases/latest)
 
-Catch missing seeds before a commit. Check whether a coding agent's changes altered experiment outputs.
+Catch reproducibility risks before a commit. Check whether a coding agent's changes altered experiment outputs.
 
 Repro Lens includes a CLI, a pre-commit hook, a reproducibility skill for coding agents, and a small scikit-learn project template. The checker needs only Python 3.11+; it never imports the project it scans.
+
+## Framework checks
+
+Static checks cover selected APIs in **scikit-learn, XGBoost, LightGBM, PyTorch,
+TensorFlow and Lightning**, plus Python and NumPy RNG construction. Install none
+of these frameworks to scan their code.
+
+| Framework | What gets checked |
+| --- | --- |
+| scikit-learn | Explicit randomness control in supported splits, estimators and datasets |
+| XGBoost | `gblinear` with the nondeterministic `shotgun` updater, even with a seed |
+| LightGBM | CPU determinism, device choice and forced histogram configuration |
+| PyTorch | DataLoader/random_split generators, cuDNN benchmarking and deterministic mode |
+| TensorFlow | Generators explicitly initialized from nondeterministic state |
+| Lightning | Trainer determinism, warning-only mode and benchmarking |
+
+Known risks are warnings; settings that may be controlled elsewhere are nonblocking
+`review` items. Native boosting `train`/`cv` calls accept inline parameter dictionaries.
+Aliases and justified suppressions work across frameworks. See the exact
+[API coverage, examples and limits](docs/frameworks.md).
+
+Run the dependency-free [framework examples](examples/framework_checks/):
+
+```bash
+uv run --no-dev python examples/framework_checks/demo.py
+```
+
+These checks are available on the current development branch; the `v0.2.0` tag below
+predates the framework expansion. Use `uv tool install .` from this checkout to try them.
 
 ## Try the before/after demo
 
@@ -129,7 +158,10 @@ uv build
 
 Contributions need both a failure example and valid code that the rule must leave alone. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [architecture decision](docs/architecture.md).
 
-Early release: selected scikit-learn APIs and Python/NumPy RNG construction are covered. Notebook cells, PyTorch, arbitrary wrappers and whole-program data flow are not yet supported. The package is not published to PyPI.
+Early release: framework coverage is deliberately limited to documented APIs. Notebook cells,
+arbitrary wrappers and whole-program data flow are not yet supported. `init` still generates
+a scikit-learn project; `verify` and `compare` use a framework-independent output contract.
+The package is not published to PyPI. No comparative accuracy or SOTA claim is made.
 
 Try it on one training script. If it misses a supported call or flags valid code, [open an issue](https://github.com/00200200/repro-lens/issues/new) with a minimal example. If you find it useful, a star helps other maintainers discover it.
 

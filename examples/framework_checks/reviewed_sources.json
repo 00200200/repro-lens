@@ -1,0 +1,61 @@
+[
+  {
+    "repository": "dmlc/xgboost",
+    "commit": "2ddf6aefe6cd334e7639a68d1b811503c5fbe084",
+    "path": "demo/guide-python/generalized_linear_model.py",
+    "sha256": "16ecfa4a1574c2ca0fa516e14aa98db4b2a5ca8b4f335384227a6c8becebe095",
+    "source_url": "https://raw.githubusercontent.com/dmlc/xgboost/2ddf6aefe6cd334e7639a68d1b811503c5fbe084/demo/guide-python/generalized_linear_model.py",
+    "expected_findings": [
+      {
+        "line": 42,
+        "code": "R190",
+        "severity": "review"
+      }
+    ],
+    "review": "R190 at line 42: the parameter dictionary is passed through a variable. Human review sees gblinear with an omitted updater, but the scanner intentionally does not resolve dictionary variables."
+  },
+  {
+    "repository": "microsoft/LightGBM",
+    "commit": "d02a01ac6f51d36c9e62388243bcb75c3b1b1774",
+    "path": "examples/python-guide/sklearn_example.py",
+    "sha256": "37eca0b316f9fb0868a54a20b370b58b2a9591d68f5a1693ac4380a03c6e1ede",
+    "source_url": "https://raw.githubusercontent.com/microsoft/LightGBM/d02a01ac6f51d36c9e62388243bcb75c3b1b1774/examples/python-guide/sklearn_example.py",
+    "expected_findings": [
+      {
+        "line": 24,
+        "code": "R105",
+        "severity": "review"
+      },
+      {
+        "line": 71,
+        "code": "R105",
+        "severity": "review"
+      }
+    ],
+    "review": "Two advisory R105 findings at lines 24 and 71: deterministic is omitted. No output instability is established; the library has default seeds."
+  },
+  {
+    "repository": "pytorch/examples",
+    "commit": "acc295dc7b90714f1bf47f06004fc19a7fe235c4",
+    "path": "distributed/ddp-tutorial-series/single_gpu.py",
+    "sha256": "e4b64716b50d6261069f38e552ed0c370f08a760e5fc975a2b34bb0f27f5dfe6",
+    "source_url": "https://raw.githubusercontent.com/pytorch/examples/acc295dc7b90714f1bf47f06004fc19a7fe235c4/distributed/ddp-tutorial-series/single_gpu.py",
+    "expected_findings": [
+      {
+        "line": 58,
+        "code": "R106",
+        "severity": "review"
+      }
+    ],
+    "review": "R106 at line 58: a shuffled DataLoader omits an explicit generator. Custom dataset and global RNG behavior remain unresolved; this is not a confirmed upstream defect."
+  },
+  {
+    "repository": "Lightning-AI/pytorch-lightning",
+    "commit": "655a3a91828694b9bfc241177f474741e483aeaa",
+    "path": "examples/pytorch/basics/autoencoder.py",
+    "sha256": "fbd691666054c1ac7472df714d5e8b4cdfb912d5973d010cd6a6172cf6bf3255",
+    "source_url": "https://raw.githubusercontent.com/Lightning-AI/pytorch-lightning/655a3a91828694b9bfc241177f474741e483aeaa/examples/pytorch/basics/autoencoder.py",
+    "expected_findings": [],
+    "review": "No findings. The random_split call passes a seeded generator and the DataLoaders do not explicitly shuffle. LightningCLI constructs the Trainer indirectly, outside R109 coverage."
+  }
+]

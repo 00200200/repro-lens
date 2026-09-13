@@ -5,7 +5,14 @@
 | R101 | warning | A supported randomized sklearn call lacks explicit non-None random_state |
 | R102 | warning | A new NumPy RNG lacks an explicit seed/RNG argument |
 | R103 | warning | A new Python Random instance lacks an explicit seed |
-| R190 | review | Dynamic shuffle or expanded arguments prevent a decision |
+| R104 | warning | XGBoost gblinear selects the nondeterministic shotgun updater |
+| R105 | review | LightGBM determinism, device or histogram settings need review |
+| R106 | review | PyTorch data sampling has no explicit generator; global control is unresolved |
+| R107 | warning | PyTorch cuDNN benchmarking is explicitly enabled |
+| R108 | warning | TensorFlow explicitly initializes a nondeterministic RNG |
+| R109 | review | Lightning Trainer does not request strict determinism without benchmarking |
+| R110 | review | PyTorch deterministic algorithms are disabled or warning-only |
+| R190 | review | Dynamic arguments or framework configuration prevent a decision |
 | P201 | error | A file required by this project's policy is missing |
 | P202 | error | Project configuration is invalid |
 | P203 | error | Verification inputs/configuration cannot be resolved safely |
@@ -14,6 +21,9 @@
 
 `--fail-on warning` is the default. Review items never fail the hook; choose
 `--fail-on error` when warnings should remain advisory.
+
+See [framework coverage](frameworks.md) for R104–R110: exact APIs, primary sources,
+passing examples and limits. These rules share the CLI, hook and skill engine.
 
 Supported sklearn APIs are the explicit registry in `analysis.py`: train_test_split,
 KFold, StratifiedKFold, ShuffleSplit, StratifiedShuffleSplit, GroupShuffleSplit,
@@ -48,7 +58,7 @@ a nested lambda in a default do not hide imports used by the outer lambda.
 
 Wrappers, monkeypatches, star/dynamic imports, complex control flow and imports after
 function definitions can be missed. This is not a whole-program analyzer. Notebook
-cells and PyTorch are outside this version's coverage. Only `.py` files are inspected;
+cells are outside this version's coverage. Only `.py` files are inspected;
 escaping paths and generated directories are skipped. Git file discovery honors
 exclusions; without Git, default directory exclusions and configured globs apply.
 

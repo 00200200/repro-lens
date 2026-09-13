@@ -44,3 +44,31 @@ installation or training run is needed. Later checker versions can produce diffe
 results; retain their version alongside the report.
 
 For a new project, use the [advisory rollout guide](trying-an-existing-project.md).
+
+## Framework expansion: four public Python examples
+
+On 2026-09-13, the implementation introducing R104–R110 was also checked against
+four hand-picked public files. All four were read in full and scanned without
+installing their frameworks or running them. Exact commits, SHA-256 hashes,
+download URLs, findings and interpretations are retained in the
+[reviewed-source manifest](../examples/framework_checks/reviewed_sources.json).
+
+| Reviewed source | Findings | Interpretation |
+| --- | --- | --- |
+| [XGBoost GLM](https://github.com/dmlc/xgboost/blob/2ddf6aefe6cd334e7639a68d1b811503c5fbe084/demo/guide-python/generalized_linear_model.py) | R190, line 42 | The parameter dictionary is passed through a variable. Human review sees `gblinear` without an updater; the scanner cannot resolve this indirect configuration. |
+| [LightGBM sklearn interface](https://github.com/microsoft/LightGBM/blob/d02a01ac6f51d36c9e62388243bcb75c3b1b1774/examples/python-guide/sklearn_example.py) | Two R105 reviews, lines 24 and 71 | Both constructors omit deterministic mode. No output instability was established; default seeds are not treated as uncontrolled entropy. |
+| [PyTorch single-GPU tutorial](https://github.com/pytorch/examples/blob/acc295dc7b90714f1bf47f06004fc19a7fe235c4/distributed/ddp-tutorial-series/single_gpu.py) | R106, line 58 | Explicitly shuffled loading omits a generator. The custom dataset and global RNG need context. |
+| [Lightning autoencoder](https://github.com/Lightning-AI/pytorch-lightning/blob/655a3a91828694b9bfc241177f474741e483aeaa/examples/pytorch/basics/autoencoder.py) | None | The split has a seeded generator and loaders do not explicitly shuffle. `LightningCLI` constructs the Trainer indirectly, outside R109 coverage. |
+
+Result: four nonblocking review items, zero warnings. This small convenience sample
+does not measure recall or a general false-positive rate. In particular, the XGBoost
+configuration shows a detection limit and Lightning's clean result does not certify
+its Trainer policy. TensorFlow's new rule was checked against its primary API
+contract and synthetic cases; no external TensorFlow project was evaluated here.
+No upstream defect, framework execution result or independent adoption is claimed.
+
+To repeat, fetch the exact URLs in the manifest, verify each SHA-256, and scan the
+downloaded `.py` files with this development checkout. Record `git rev-parse HEAD`
+alongside the report: the v0.2.0 release predates these checks. The seven-pair
+[local demo](../examples/framework_checks/) provides an offline behavioral check,
+including positive and negative examples for every new rule.

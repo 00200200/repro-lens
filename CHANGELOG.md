@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add seven documented framework checks for XGBoost, LightGBM, PyTorch, TensorFlow and Lightning, with advisory review findings for settings that may be controlled elsewhere.
+- Resolve inline framework parameter dictionaries and literal keyword expansions while preserving uncertainty about dynamic configuration; include a dependency-free before/after scan demo.
 - Check RNG calls in lambda default arguments and preserve outer imports when a default contains another lambda.
 
 ## 0.2.0 — 2026-09-13
