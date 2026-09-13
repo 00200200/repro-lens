@@ -13,18 +13,19 @@ configuration; `pyproject.toml` configures dependencies and quality tools. The r
 synthetic dataset is a versioned fixture. `runs/` and `.repro-lens/` contain local
 outputs. Use `notebooks/` for exploration; move reusable transformations into `src/`.
 
-If Repro Lens is installed from its source checkout:
+Install Repro Lens to check and replay this experiment:
 
 ```bash
+uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.1.1'
 repro-lens check
 repro-lens verify
+git init
 uv run pre-commit install
 uv run pre-commit run --all-files
 ```
 
-Until Repro Lens is published, install it with `uv tool install /path/to/repro-lens`.
-The generated project does not silently depend on a nonexistent PyPI release.
-Alternatively invoke the CLI from its checkout with `uv run --project /path/to/repro-lens
+The package is distributed through GitHub releases and tagged source; it is not on PyPI.
+For local development, invoke the CLI from its checkout with `uv run --project /path/to/repro-lens
 repro-lens verify --root /path/to/this/project` (as one shell command).
 
 See [reproduction instructions](docs/reproducing.md) and [dataset provenance](data/README.md).
