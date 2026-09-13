@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://00200200.github.io/repro-lens/"><b>Explore in your browser</b></a> ·
   <a href="#try-the-beforeafter-demo"><b>Run the demo</b></a> ·
   <a href="examples/README.md">Browse examples</a> ·
   <a href="#install">Install</a> ·
@@ -39,6 +40,10 @@ Use the CLI, an opt-in [pre-commit hook](#pre-commit), or the
 [reproducibility skill](skills/reproducibility/SKILL.md) in your coding agent.
 
 ## Try the before/after demo
+
+**Start without installing:** [explore the browser gallery](https://00200200.github.io/repro-lens/)
+to search checked code pairs by framework or finding. It shows saved static results
+from the same checker as the CLI; the page does not run your code.
 
 Want a specific workflow? [Browse examples by question, dependencies and expected result](examples/README.md).
 

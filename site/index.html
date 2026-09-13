@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explore ML reproducibility risks with checked before-and-after Python examples. Browse by framework, copy a snippet, and contribute a case.">
+  <meta name="theme-color" content="#142d2c">
+  <title>Repro Lens — explore reproducibility checks</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="gallery.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#examples">Skip to examples</a>
+  <header class="topbar">
+    <a class="brand" href="./"><span class="mark" aria-hidden="true">◎</span> Repro Lens</a>
+    <nav aria-label="Main navigation">
+      <a href="https://github.com/00200200/repro-lens#install">Install</a>
+      <a href="https://github.com/00200200/repro-lens/blob/main/CONTRIBUTING.md">Contribute</a>
+      <a href="https://github.com/00200200/repro-lens">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="title">
+      <div class="hero-copy">
+        <p class="eyebrow">OPEN SOURCE · PYTHON &amp; ML</p>
+        <h1 id="title">A seed is a start.<br><span>Check the rest.</span></h1>
+        <p class="lead">Explore a reproducibility risk, compare the code, and see what the checker finds. No installation needed.</p>
+        <a class="primary-link" href="#examples">Explore {{COUNT}} examples <span aria-hidden="true">↓</span></a>
+      </div>
+      <aside class="hero-note" aria-label="How to read the examples">
+        <p class="note-label">READ THE EVIDENCE</p>
+        <p><span class="status-dot warning-dot"></span><strong>Warning</strong><br>A covered policy violation or known risk.</p>
+        <p><span class="status-dot review-dot"></span><strong>Review</strong><br>A setting that needs context. Advisory, not blocking.</p>
+        <p class="note-footer">{{COUNT}} code pairs · {{FRAMEWORK_COUNT}} frameworks &amp; libraries</p>
+      </aside>
+    </section>
+    <section class="browser" id="examples" aria-label="Example gallery">
+      <div class="section-heading"><div><p class="eyebrow">FIND YOUR CASE</p><h2>Small examples. Explicit choices.</h2></div>
+        <p id="count" role="status">{{COUNT}} examples</p>
+      </div>
+      <div class="filters" hidden>
+        <div class="search-field"><label for="search">Search examples</label><input id="search" type="search" placeholder="Try DataLoader, seed, or R104…" autocomplete="off"></div>
+        <div><label for="framework">Framework or library</label><select id="framework"><option value="">All frameworks &amp; libraries</option>{{OPTIONS}}</select></div>
+        <div><label for="severity">Finding</label><select id="severity"><option value="">All findings</option><option value="warning">Warning</option><option value="review">Review</option></select></div>
+        <button class="reset" type="button" id="reset">Reset filters</button>
+      </div>
+      <p class="context">These are <strong>saved static results from the Repro Lens checker</strong>, generated from the versioned examples when this site is built. This page does not execute Python or scan pasted code. In the snippets, <code>seed</code> stands for the seed chosen for your experiment.</p>
+      <noscript><p>All examples are available below. Search and copy buttons need JavaScript.</p></noscript>
+      <p id="empty" hidden>No examples match. Try another term or reset the filters.</p>
+      <div class="examples">{{CARDS}}</div>
+      <p id="copy-status" class="copy-status" role="status"></p>
+    </section>
+    <section class="next-steps" aria-labelledby="next-title">
+      <div><p class="eyebrow">TAKE THE NEXT STEP</p><h2 id="next-title">Try your code. Share what you find.</h2><p>A static scan is one piece of evidence. Repro Lens can also replay an experiment and compare retained outputs before and after an edit.</p></div>
+      <div class="next-links">
+        <a href="https://github.com/00200200/repro-lens/blob/main/docs/trying-an-existing-project.md">Check an existing project <span aria-hidden="true">↗</span></a>
+        <a href="https://github.com/00200200/repro-lens/tree/main/examples/xgboost_review">Run the XGBoost CPU example <span aria-hidden="true">↗</span></a>
+        <a href="https://github.com/00200200/repro-lens/issues/new?template=problem.yml">Report a false alarm or missed call <span aria-hidden="true">↗</span></a>
+        <a href="https://github.com/00200200/repro-lens/blob/main/CONTRIBUTING.md#contribute-an-example">Contribute a small example <span aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <p><strong>Repro Lens</strong> · Free, community-supported, MIT licensed.</p>
+    <p>Selected APIs only. A clean static scan or two matching runs does not establish scientific validity. <a href="https://github.com/00200200/repro-lens/blob/main/docs/frameworks.md">Coverage and limits</a></p>
+    <details><summary>Where these results come from</summary><p>Generated with the same analyzer as the CLI, using <a href="https://github.com/00200200/repro-lens/blob/main/examples/framework_checks/cases.json">versioned source examples</a>. Frameworks are not imported and no training is run while building this gallery.</p><p>Example data SHA-256: <code>{{CASES_HASH}}</code></p><p>Checker source SHA-256: <code>{{ENGINE_HASH}}</code></p></details>
+  </footer>
+</body>
+</html>

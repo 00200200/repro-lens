@@ -35,3 +35,6 @@ Make the example fail when its advertised outcome changes so CI can validate it.
 
 For a bug report, code and actual versus expected output are enough to start;
 a complete runnable demonstration can follow during review.
+
+For a small before/after case, follow the [browser gallery guide](site/README.md#add-a-case).
+Its builder checks the advertised result with the same analyzer as the CLI.
