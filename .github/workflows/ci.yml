@@ -1,0 +1,34 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv build
+      - name: Validate a generated experiment
+        run: |
+          uv run repro-lens init /tmp/repro-lens-example --name ci_experiment
+          uv sync --project /tmp/repro-lens-example --locked
+          uv run --project /tmp/repro-lens-example pytest /tmp/repro-lens-example/tests
+          uv run repro-lens check --root /tmp/repro-lens-example
+          uv run repro-lens verify --root /tmp/repro-lens-example
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: evidence-${{ matrix.python }}
+          path: /tmp/repro-lens-example/.repro-lens/
+          include-hidden-files: true

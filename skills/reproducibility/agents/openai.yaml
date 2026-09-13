@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reproducibility"
+  short_description: "Audit and verify ML experiment repeatability"
+  default_prompt: "Use $reproducibility to inspect this ML project, collect evidence and address reproducibility blockers."

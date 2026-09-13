@@ -1,0 +1,36 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-toml
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff check
+        entry: uv run --locked ruff check --fix
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: Ruff format
+        entry: uv run --locked ruff format
+        language: system
+        types: [python]
+      - id: lock-consistency
+        name: Lockfile consistency
+        entry: uv lock --check
+        language: system
+        files: '(^|/)(pyproject\.toml|uv\.lock)$'
+        pass_filenames: false
+      - id: repro-lens
+        name: Repro Lens
+        entry: repro-lens check
+        language: system
+        files: '\.(py|toml|lock)$'
+        require_serial: true
