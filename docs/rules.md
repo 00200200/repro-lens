@@ -25,13 +25,36 @@
 See [framework coverage](frameworks.md) for R104–R110: exact APIs, primary sources,
 passing examples and limits. These rules share the CLI, hook and skill engine.
 
-Supported sklearn APIs are the explicit registry in `analysis.py`: train_test_split,
-KFold, StratifiedKFold, ShuffleSplit, StratifiedShuffleSplit, GroupShuffleSplit,
-RepeatedKFold, RepeatedStratifiedKFold, RandomForestClassifier/Regressor,
-ExtraTreesClassifier/Regressor, DecisionTreeClassifier/Regressor, make_classification,
-make_regression and make_blobs. KFold/StratifiedKFold are checked with shuffle=True;
-train_test_split with shuffle=False is not flagged. This registry does not model
-every library version or every estimator's parameter conditions.
+Supported sklearn APIs are the explicit registry in `analysis.py`:
+
+| Area | APIs |
+| --- | --- |
+| Splits and search | train_test_split, KFold, StratifiedKFold, StratifiedGroupKFold, ShuffleSplit, StratifiedShuffleSplit, GroupShuffleSplit, RepeatedKFold, RepeatedStratifiedKFold, learning_curve, RandomizedSearchCV |
+| Linear models | SGDClassifier/Regressor, SGDOneClassSVM, PassiveAggressiveClassifier/Regressor, RANSACRegressor |
+| Trees and ensembles | DecisionTree, ExtraTree, RandomForest, ExtraTrees, GradientBoosting and Bagging Classifier/Regressor; IsolationForest, RandomTreesEmbedding |
+| Neural networks | MLPClassifier/Regressor, BernoulliRBM |
+| Clustering and mixtures | KMeans, MiniBatchKMeans, BisectingKMeans, GaussianMixture, BayesianGaussianMixture |
+| Transformers | LatentDirichletAllocation, TSNE, RBFSampler, Nystroem, GaussianRandomProjection, SparseRandomProjection |
+| Utilities and datasets | permutation_importance, utils.shuffle, utils.resample, make_classification, make_regression, make_blobs |
+
+KFold, StratifiedKFold, StratifiedGroupKFold and learning_curve are checked with
+shuffle=True. train_test_split and SGDOneClassSVM shuffle by default and are not
+flagged with shuffle=False. SGDClassifier/Regressor and PassiveAggressiveClassifier/
+Regressor also use random_state for the validation split when early_stopping=True
+([`BaseSGD._make_validation_split`](https://github.com/scikit-learn/scikit-learn/blob/1.9.1/sklearn/linear_model/_stochastic_gradient.py#L263-L290)),
+so they are flagged when shuffle or early_stopping is enabled. With shuffle=False and
+an unresolved early_stopping (or shuffle), they are R190 review items unless an explicit
+random_state is passed. KMeans with a non-string
+`init` (a centroid array, callable or variable) is an R190 review item, since fixed
+centroids do not use random_state. Every other API is flagged whenever random_state
+is missing, following its scikit-learn 1.9 documentation.
+
+APIs seeded by default, such as Perceptron and permutation_test_score (both
+`random_state=0`), are not flagged. Neither are APIs that use random_state only for
+some arguments: PCA and TruncatedSVD solvers, FastICA without `w_init`,
+HistGradientBoosting binning or early stopping, SpectralClustering, and AdaBoost with
+a custom estimator. This registry does not model every library version or every
+estimator's parameter conditions.
 
 RNG findings are screening warnings: omitted random_state can be deliberate with
 controlled upstream global RNG state. The checker does not infer that state. Pass an

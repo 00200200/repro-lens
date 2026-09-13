@@ -64,3 +64,30 @@ jobs:
             .repro-lens/xgboost-demo/
             !.repro-lens/xgboost-demo/**/.venv/**
           include-hidden-files: true
+  gallery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          python-version: '3.11'
+          enable-cache: true
+      - run: uv sync --locked --no-dev
+      - run: uv run --no-dev python tools/build_gallery.py
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: dist/gallery
+  deploy-gallery:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [test, xgboost-replay, gallery]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy the checked gallery
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

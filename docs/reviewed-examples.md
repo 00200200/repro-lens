@@ -19,9 +19,9 @@ All six warnings describe omitted arguments in code with upstream RNG control. N
 repeatability failure was established. There is no basis here for reporting six
 upstream bugs or changing the examples' statistical choices.
 
-The scanner does not model global RNG state or all estimator behavior. Bagging and
-AdaBoost are outside its current API registry even when a nested tree constructor
-is recognized. A clean result on the OOB example does not establish whole-script
+The scanner does not model global RNG state or all estimator behavior. At v0.1.1,
+Bagging and AdaBoost were outside the API registry even when a nested tree constructor
+was recognized; later versions add Bagging, while AdaBoost remains outside it. A clean result on the OOB example does not establish whole-script
 coverage or repeatability either.
 
 ## Repeat the static scan
@@ -72,6 +72,6 @@ No upstream defect, framework execution result or independent adoption is claime
 To repeat, fetch the exact URLs in the manifest, verify each SHA-256, and scan the
 downloaded `.py` files with the current source checkout. Record `git rev-parse HEAD`
 alongside the report. The v0.3.0 tag predates named-dictionary resolution and reports
-R190 for the XGBoost call. The seven-pair
+R190 for the XGBoost call. The before/after
 [local demo](../examples/framework_checks/) provides an offline behavioral check,
 including positive and negative examples for every new rule.

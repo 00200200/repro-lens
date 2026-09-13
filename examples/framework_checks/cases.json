@@ -1,44 +1,132 @@
 [
   {
+    "id": "sklearn-data-split",
+    "name": "scikit-learn data split",
+    "framework": "scikit-learn",
+    "question": "Make a shuffled split reproducible.",
+    "explanation": "The covered split omits random_state. An explicit seed makes the intended policy visible; global RNG initialization can also matter and should be reviewed.",
+    "before": "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n",
+    "after": "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y, random_state=seed)\n",
+    "expected": [
+      "R101",
+      "warning"
+    ]
+  },
+  {
+    "id": "numpy-generator",
+    "name": "NumPy generator",
+    "framework": "NumPy",
+    "question": "Avoid an implicitly initialized generator.",
+    "explanation": "Calling default_rng without a seed draws fresh entropy. Use a seed chosen for the experiment, and retain its inputs and environment as well.",
+    "before": "import numpy as np\nnp.random.default_rng()\n",
+    "after": "import numpy as np\nnp.random.default_rng(seed)\n",
+    "expected": [
+      "R102",
+      "warning"
+    ]
+  },
+  {
+    "id": "python-random",
+    "name": "Python random generator",
+    "framework": "Python",
+    "question": "Make a local random generator explicit.",
+    "explanation": "A new Random instance without an argument is not controlled by seeding the module-level generator. Supply the seed intended for this instance.",
+    "before": "import random\nrandom.Random()\n",
+    "after": "import random\nrandom.Random(seed)\n",
+    "expected": [
+      "R103",
+      "warning"
+    ]
+  },
+  {
     "name": "XGBoost linear updater",
     "before": "import xgboost as xgb\nxgb.XGBRegressor(booster='gblinear', random_state=seed)\n",
     "after": "import xgboost as xgb\nxgb.XGBRegressor(booster='gblinear', updater='coord_descent', random_state=seed)\n",
-    "expected": ["R104", "warning"]
+    "expected": [
+      "R104",
+      "warning"
+    ],
+    "id": "xgboost-linear-updater",
+    "framework": "XGBoost",
+    "question": "A seed does not make every updater deterministic.",
+    "explanation": "The default shotgun updater for gblinear is nondeterministic. Coordinate descent is an alternative to review for your experiment."
   },
   {
     "name": "LightGBM CPU histogram",
     "before": "import lightgbm as lgb\nparams = {'deterministic': True}\nlgb.train(params, train_data)\n",
     "after": "import lightgbm as lgb\nparams = {'deterministic': True, 'force_col_wise': True, 'seed': seed}\nlgb.train(params, train_data)\n",
-    "expected": ["R105", "review"]
+    "expected": [
+      "R105",
+      "review"
+    ],
+    "id": "lightgbm-cpu-histogram",
+    "framework": "LightGBM",
+    "question": "Make CPU histogram construction explicit.",
+    "explanation": "For the covered CPU configuration, deterministic mode also needs an explicit histogram choice. Select row-wise or column-wise construction for your workload; the example uses column-wise."
   },
   {
     "name": "PyTorch shuffled data",
     "before": "from torch.utils.data import DataLoader\nDataLoader(dataset, shuffle=True)\n",
     "after": "import torch\nfrom torch.utils.data import DataLoader\nDataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed(seed))\n",
-    "expected": ["R106", "review"]
+    "expected": [
+      "R106",
+      "review"
+    ],
+    "id": "pytorch-shuffled-data",
+    "framework": "PyTorch",
+    "question": "Give shuffled loading an explicit generator.",
+    "explanation": "A missing generator needs review because RNG state may be managed elsewhere. The example makes generator ownership explicit; worker initialization and dataset behavior still need attention."
   },
   {
     "name": "PyTorch cuDNN benchmark",
     "before": "import torch\ntorch.backends.cudnn.benchmark = True\n",
     "after": "import torch\ntorch.backends.cudnn.benchmark = False\n",
-    "expected": ["R107", "warning"]
+    "expected": [
+      "R107",
+      "warning"
+    ],
+    "id": "pytorch-cudnn-benchmark",
+    "framework": "PyTorch",
+    "question": "Review cuDNN algorithm benchmarking.",
+    "explanation": "Benchmarking can select different convolution algorithms between runs. Turning it off addresses this setting, but does not establish deterministic execution."
   },
   {
     "name": "TensorFlow RNG state",
     "before": "import tensorflow as tf\ntf.random.Generator.from_non_deterministic_state()\n",
     "after": "import tensorflow as tf\ntf.random.Generator.from_seed(seed)\n",
-    "expected": ["R108", "warning"]
+    "expected": [
+      "R108",
+      "warning"
+    ],
+    "id": "tensorflow-rng-state",
+    "framework": "TensorFlow",
+    "question": "Choose how the RNG state is initialized.",
+    "explanation": "This constructor explicitly requests nondeterministic state. The alternative uses your chosen seed; it does not configure every TensorFlow operation."
   },
   {
     "name": "Lightning Trainer",
     "before": "from lightning.pytorch import Trainer\nTrainer(deterministic='warn')\n",
     "after": "from lightning.pytorch import Trainer, seed_everything\nseed_everything(seed, workers=True)\nTrainer(deterministic=True, benchmark=False)\n",
-    "expected": ["R109", "review"]
+    "expected": [
+      "R109",
+      "review"
+    ],
+    "id": "lightning-trainer",
+    "framework": "Lightning",
+    "question": "Decide whether determinism is required or advisory.",
+    "explanation": "Warning-only mode allows operations without a deterministic implementation to proceed. Strict mode can raise errors, so review the choice and its effect on training."
   },
   {
     "name": "PyTorch algorithm policy",
     "before": "import torch\ntorch.use_deterministic_algorithms(True, warn_only=True)\n",
     "after": "import torch\ntorch.use_deterministic_algorithms(True, warn_only=False)\n",
-    "expected": ["R110", "review"]
+    "expected": [
+      "R110",
+      "review"
+    ],
+    "id": "pytorch-algorithm-policy",
+    "framework": "PyTorch",
+    "question": "Make unsupported deterministic operations visible.",
+    "explanation": "With warn_only=True, an unsupported operation can continue. Strict mode changes that behavior and may stop a run; it is a policy decision, not a universal fix."
   }
 ]

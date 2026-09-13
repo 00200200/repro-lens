@@ -11,12 +11,14 @@
 </p>
 
 <p align="center">
+  <a href="https://00200200.github.io/repro-lens/"><b>Explore in your browser</b></a> ·
   <a href="#try-the-beforeafter-demo"><b>Run the demo</b></a> ·
+  <a href="examples/README.md">Browse examples</a> ·
   <a href="#install">Install</a> ·
   <a href="#framework-checks">Framework checks</a> ·
   <a href="#coding-agents">Coding agents</a> ·
   <a href="CONTRIBUTING.md">Contribute</a> ·
-  <a href="docs/support.md">Support &amp; paid pilots</a>
+  <a href="docs/support.md">Community support</a>
 </p>
 
 # Repro Lens
@@ -38,6 +40,12 @@ Use the CLI, an opt-in [pre-commit hook](#pre-commit), or the
 [reproducibility skill](skills/reproducibility/SKILL.md) in your coding agent.
 
 ## Try the before/after demo
+
+**Start without installing:** [explore the browser gallery](https://00200200.github.io/repro-lens/)
+to search checked code pairs by framework or finding. It shows saved static results
+from the same checker as the CLI; the page does not run your code.
+
+Want a specific workflow? [Browse examples by question, dependencies and expected result](examples/README.md).
 
 With Python 3.11+, Git and [uv](https://docs.astral.sh/uv/getting-started/installation/), run from a directory where `repro-lens` does not already exist:
 
@@ -180,12 +188,11 @@ Example request:
 
 The skill distinguishes source-level risks from observed execution results. It does not start a separate LLM service or require an API key. For standalone skill installation, install the CLI too; the full plugin checkout already includes its engine.
 
-## Support and paid pilots
+## Community support
 
-Need help reviewing an ML experiment or setting up checks in CI?
-[Discuss a paid pilot](docs/support.md): scope one experiment, agree its output
-contract, and review the evidence before and after a change. The enquiry page
-also explains sponsorship status. Repro Lens remains free and MIT-licensed.
+Repro Lens is free and open source. For questions, bug reports and suggestions,
+see the [community support guide](docs/support.md). You can help by sharing a
+minimal reproduction, improving the documentation or contributing a fix.
 
 ## Development
 

@@ -70,6 +70,103 @@ def test_randomness_conditions(source, expected):
 
 
 @pytest.mark.parametrize(
+    "module, name",
+    [
+        ("sklearn.model_selection", "RandomizedSearchCV"),
+        ("sklearn.linear_model", "RANSACRegressor"),
+        ("sklearn.neural_network", "MLPClassifier"),
+        ("sklearn.neural_network", "BernoulliRBM"),
+        ("sklearn.cluster", "MiniBatchKMeans"),
+        ("sklearn.cluster", "BisectingKMeans"),
+        ("sklearn.mixture", "GaussianMixture"),
+        ("sklearn.ensemble", "GradientBoostingRegressor"),
+        ("sklearn.ensemble", "BaggingClassifier"),
+        ("sklearn.ensemble", "IsolationForest"),
+        ("sklearn.tree", "ExtraTreeClassifier"),
+        ("sklearn.decomposition", "LatentDirichletAllocation"),
+        ("sklearn.manifold", "TSNE"),
+        ("sklearn.kernel_approximation", "Nystroem"),
+        ("sklearn.random_projection", "SparseRandomProjection"),
+        ("sklearn.inspection", "permutation_importance"),
+        ("sklearn.utils", "shuffle"),
+        ("sklearn.utils", "resample"),
+    ],
+)
+def test_estimators_that_always_use_random_state(module, name):
+    imported = f"from {module} import {name}\n"
+    assert codes(imported + f"{name}()") == ["R101"]
+    assert codes(imported + f"{name}(random_state=None)") == ["R101"]
+    assert codes(imported + f"{name}(random_state=seed)") == []
+    assert codes(imported + f"{name}(**options)") == ["R190"]
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("from sklearn.linear_model import SGDClassifier\nSGDClassifier()", ["R101"]),
+        ("from sklearn.linear_model import SGDRegressor\nSGDRegressor(shuffle=True)", ["R101"]),
+        ("import sklearn.linear_model as lm\nlm.PassiveAggressiveRegressor()", ["R101"]),
+        ("from sklearn.linear_model import SGDOneClassSVM\nSGDOneClassSVM(shuffle=False)", []),
+        ("from sklearn.linear_model import SGDClassifier\nSGDClassifier(shuffle=flag)", ["R190"]),
+        ("from sklearn.linear_model import SGDClassifier\nSGDClassifier(random_state=0)", []),
+        ("from sklearn.model_selection import StratifiedGroupKFold as K\nK()", []),
+        (
+            "from sklearn.model_selection import StratifiedGroupKFold as K\nK(shuffle=True)",
+            ["R101"],
+        ),
+        ("from sklearn.model_selection import learning_curve\nlearning_curve(m, X, y)", []),
+        (
+            "from sklearn.model_selection import learning_curve\n"
+            "learning_curve(m, X, y, shuffle=True)",
+            ["R101"],
+        ),
+        ("from sklearn.cluster import KMeans\nKMeans(init='random')", ["R101"]),
+        ("from sklearn.cluster import KMeans\nKMeans(init=centroids)", ["R190"]),
+        ("from sklearn.cluster import KMeans\nKMeans(init=centroids, random_state=0)", []),
+        ("from sklearn.cluster import MiniBatchKMeans\nMiniBatchKMeans(init=centroids)", ["R101"]),
+        # Seeded by default, or random only for some arguments: outside the registry.
+        ("from sklearn.linear_model import Perceptron\nPerceptron()", []),
+        ("from sklearn.model_selection import permutation_test_score as p\np(m, X, y)", []),
+        ("from sklearn.decomposition import PCA\nPCA(svd_solver='randomized')", []),
+        ("from sklearn.ensemble import HistGradientBoostingClassifier as H\nH()", []),
+        ("import app\napp.KMeans()", []),
+    ],
+)
+def test_shuffle_defaults_and_registry_limits(source, expected):
+    assert codes(source) == expected
+
+
+@pytest.mark.parametrize(
+    "estimator",
+    ["SGDClassifier", "SGDRegressor", "PassiveAggressiveClassifier", "PassiveAggressiveRegressor"],
+)
+@pytest.mark.parametrize(
+    "arguments, expected",
+    [
+        ("shuffle=False", []),
+        ("shuffle=False, early_stopping=False", []),
+        ("shuffle=False, early_stopping=True", ["R101"]),
+        ("shuffle=False, early_stopping=True, random_state=None", ["R101"]),
+        ("shuffle=False, early_stopping=True, random_state=0", []),
+        ("early_stopping=True", ["R101"]),
+        ("shuffle=False, early_stopping=stop", ["R190"]),
+        ("shuffle=False, early_stopping=stop, random_state=seed", []),
+        ("shuffle=False, **options", ["R190"]),
+        ("shuffle=False, early_stopping=True, **options", ["R190"]),
+        ("shuffle=False, early_stopping=True, random_state=seed, **options", []),
+    ],
+)
+def test_early_stopping_uses_random_state_without_shuffle(estimator, arguments, expected):
+    source = f"from sklearn.linear_model import {estimator}\n{estimator}({arguments})"
+    assert codes(source) == expected
+
+
+def test_one_class_sgd_has_no_early_stopping_split():
+    source = "from sklearn.linear_model import SGDOneClassSVM\nSGDOneClassSVM(shuffle=False)"
+    assert codes(source) == []
+
+
+@pytest.mark.parametrize(
     "body",
     [
         "np = custom\nnp.random.default_rng()",
