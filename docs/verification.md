@@ -1,5 +1,9 @@
 # Verification contract
 
+For checking an edit against an earlier experiment, retain reports from both revisions
+and use [before-and-after comparison](agent-review.md). Two runs of the current revision
+alone do not establish agreement with the earlier output.
+
 ```toml
 [tool.repro-lens.verify]
 command = ["{python}", "train.py", "--output", "{output}"]
@@ -20,6 +24,8 @@ Call `uv sync` first. The runner does not provision environments or constrain ne
 The result JSON contains `{"metrics": {"accuracy": 0.9}}` and optionally `runtime`
 with relevant package versions. Declared metric keys must be finite numbers; boolean,
 string, NaN and Infinity values fail. At least one metric or artifact is mandatory.
+Runtime metadata must agree as typed JSON across both runs; for example, `true` and
+`1` are different metadata values even though Python considers them equal.
 
 Object keys must be unique within each JSON object. Nonfinite numbers are rejected
 throughout the result, including runtime metadata and undeclared metrics. This includes

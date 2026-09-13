@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0 — 2026-09-13
+
+- Compare retained verification reports before and after a code change, including metric and artifact differences, input changes and changes to the verification contract or recorded environment.
+- Reject incomplete reports and run evidence that contradicts a claimed match; share strict JSON parsing and output comparison with the replay engine.
+- Extend the reproducibility skill with baseline capture and change review, backed by the CLI comparison tool.
+- Add an advisory rollout guide, a problem report form and reviewed examples of intentional global RNG control.
+
 ## 0.1.1 — 2026-09-13
 
 - Preserve integer metric precision and avoid overflow during tolerance comparisons ([#2](https://github.com/00200200/repro-lens/pull/2)).

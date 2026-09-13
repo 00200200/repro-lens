@@ -2,6 +2,11 @@
 
 The Python package owns static rules, policy loading, report schemas and experiment replay. The pre-commit hook invokes the CLI. The Agent Skill invokes the same package through a small launcher. The scikit-learn template exercises the report contract in a runnable project.
 
+For agent-assisted changes, report comparison uses the same output comparison and
+strict JSON parsing as replay. It reads retained evidence without executing a project.
+The skill coordinates baseline capture, authorized edits, validation and interpretation;
+the [change-review contract](agent-review.md) defines what the resulting statuses support.
+
 These components share a repository because a change to the verification contract needs corresponding tests, documentation and template changes. The template can become a separate project if it develops its own release cycle and maintainers. It can already be generated into an independent directory.
 
 ## Existing work

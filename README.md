@@ -3,7 +3,7 @@
 [![Checks](https://github.com/00200200/repro-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/00200200/repro-lens/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/00200200/repro-lens)](https://github.com/00200200/repro-lens/releases/latest)
 
-Catch missing seeds before a commit. Compare experiment outputs before sharing a result.
+Catch missing seeds before a commit. Check whether a coding agent's changes altered experiment outputs.
 
 Repro Lens includes a CLI, a pre-commit hook, a reproducibility skill for coding agents, and a small scikit-learn project template. The checker needs only Python 3.11+; it never imports the project it scans.
 
@@ -12,10 +12,10 @@ Repro Lens includes a CLI, a pre-commit hook, a reproducibility skill for coding
 With [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```bash
-uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.1.1'
+uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.2.0'
 ```
 
-Or use `pip install 'git+https://github.com/00200200/repro-lens.git@v0.1.1'` in a virtual environment. Both commands require Git. No NumPy, scikit-learn or API key is needed for static checks.
+Or use `pip install 'git+https://github.com/00200200/repro-lens.git@v0.2.0'` in a virtual environment. Both commands require Git. No NumPy, scikit-learn or API key is needed for static checks.
 
 [Walk through a complete example](docs/quickstart.md), or scan a project you already have:
 
@@ -65,7 +65,7 @@ Add this to `.pre-commit-config.yaml`. [pre-commit](https://pre-commit.com/#inst
 ```yaml
 repos:
   - repo: https://github.com/00200200/repro-lens
-    rev: v0.1.1
+    rev: v0.2.0
     hooks:
       - id: repro-lens
 ```
@@ -74,11 +74,22 @@ Then run `pre-commit install` and `pre-commit run --all-files`. The hook screens
 
 ## Coding agents
 
+Use the [agent change-review workflow](docs/agent-review.md) to retain a baseline,
+verify after an edit and compare the recorded outputs:
+
+```bash
+repro-lens compare /path/to/before/report.json /path/to/after/report.json --format json
+```
+
+Two successful runs after a refactor can still disagree with the baseline. Comparison
+reports output differences and changed inputs; a changed output contract or recorded
+environment requires separate review.
+
 [skills/reproducibility/SKILL.md](skills/reproducibility/SKILL.md) guides an existing coding agent through an audit or an authorized repair. Its launcher calls the same engine as the CLI. The complete repository is also a Codex plugin with `.codex-plugin/plugin.json`.
 
 Example request:
 
-> Use the reproducibility skill from this checkout to audit my ML project. Inspect the findings, fix reproducibility blockers and verify the local experiment.
+> Use the reproducibility skill to refactor this training script while preserving its declared outputs. Local verification is authorized. Capture a baseline before editing and compare it with the changed experiment.
 
 The skill distinguishes source-level risks from observed execution results. It does not start a separate LLM service or require an API key. For standalone skill installation, install the CLI too; the full plugin checkout already includes its engine.
 
