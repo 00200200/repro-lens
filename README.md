@@ -1,16 +1,23 @@
 # Repro Lens
 
-Find uncontrolled randomness in Python ML code, then test whether an experiment produces the same outputs twice.
+[![Checks](https://github.com/00200200/repro-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/00200200/repro-lens/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/00200200/repro-lens)](https://github.com/00200200/repro-lens/releases/latest)
+
+Catch missing seeds before a commit. Compare experiment outputs before sharing a result.
 
 Repro Lens includes a CLI, a pre-commit hook, a reproducibility skill for coding agents, and a small scikit-learn project template. The checker needs only Python 3.11+; it never imports the project it scans.
 
 ## Install
 
+With [uv](https://docs.astral.sh/uv/getting-started/installation/):
+
 ```bash
-git clone https://github.com/00200200/repro-lens.git
-cd repro-lens
-uv tool install .
+uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.1.1'
 ```
+
+Or use `pip install 'git+https://github.com/00200200/repro-lens.git@v0.1.1'` in a virtual environment. Both commands require Git. No NumPy, scikit-learn or API key is needed for static checks.
+
+[Walk through a complete example](docs/quickstart.md), or scan a project you already have:
 
 ## Check an existing project
 
@@ -29,11 +36,13 @@ train_test_split(X, y)  # R101: no explicit random_state
 
 The checker recognizes imported aliases, skips non-shuffled splits, and reports dynamic arguments as unresolved. Warnings can be justified with an inline comment. All rules and their limits are described in [docs/rules.md](docs/rules.md).
 
+Explicit seed expressions are accepted without evaluating their values. A clean scan is a useful review signal, not proof that the experiment is reproducible.
+
 ## Try a complete experiment
 
 ```bash
-repro-lens init /tmp/iris-study --name iris_study
-cd /tmp/iris-study
+repro-lens init repro-demo --name repro_demo
+cd repro-demo
 uv sync --locked
 uv run pytest
 repro-lens check
@@ -48,21 +57,17 @@ A clean static scan does not prove repeatability. A two-run match applies to the
 
 ## pre-commit
 
-With the CLI installed, add this to an existing configuration:
+Add this to `.pre-commit-config.yaml`. [pre-commit](https://pre-commit.com/#install) installs the checker in its own environment:
 
 ```yaml
 repos:
-  - repo: local
+  - repo: https://github.com/00200200/repro-lens
+    rev: v0.1.1
     hooks:
       - id: repro-lens
-        name: Repro Lens
-        entry: repro-lens check
-        language: system
-        files: '\.(py|toml|lock)$'
-        require_serial: true
 ```
 
-The repository also supplies `.pre-commit-hooks.yaml` for isolated hook installation. The generated template includes Ruff, file checks, lockfile validation and this hook. Run the full scan and experiment verification in CI as well.
+Then run `pre-commit install` and `pre-commit run --all-files`. The hook screens code and project policy; experiment replay stays an explicit command. Run a full scan and replay in CI as well.
 
 ## Coding agents
 
@@ -77,6 +82,8 @@ The skill distinguishes source-level risks from observed execution results. It d
 ## Development
 
 ```bash
+git clone https://github.com/00200200/repro-lens.git
+cd repro-lens
 uv sync --locked
 uv run pytest
 uv run ruff check .
@@ -87,5 +94,7 @@ uv build
 Contributions need both a failure example and valid code that the rule must leave alone. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [architecture decision](docs/architecture.md).
 
 Early release: selected scikit-learn APIs and Python/NumPy RNG construction are covered. Notebook cells, PyTorch, arbitrary wrappers and whole-program data flow are not yet supported. The package is not published to PyPI.
+
+Try it on one training script. If it misses a supported call or flags valid code, [open an issue](https://github.com/00200200/repro-lens/issues/new) with a minimal example. If you find it useful, a star helps other maintainers discover it.
 
 MIT licensed.
