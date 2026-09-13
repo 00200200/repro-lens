@@ -38,8 +38,13 @@ Supported sklearn APIs are the explicit registry in `analysis.py`:
 | Utilities and datasets | permutation_importance, utils.shuffle, utils.resample, make_classification, make_regression, make_blobs |
 
 KFold, StratifiedKFold, StratifiedGroupKFold and learning_curve are checked with
-shuffle=True. train_test_split, the SGD models and the passive-aggressive models
-shuffle by default and are not flagged with shuffle=False. KMeans with a non-string
+shuffle=True. train_test_split and SGDOneClassSVM shuffle by default and are not
+flagged with shuffle=False. SGDClassifier/Regressor and PassiveAggressiveClassifier/
+Regressor also use random_state for the validation split when early_stopping=True
+([`BaseSGD._make_validation_split`](https://github.com/scikit-learn/scikit-learn/blob/1.9.1/sklearn/linear_model/_stochastic_gradient.py#L263-L290)),
+so they are flagged when shuffle or early_stopping is enabled. With shuffle=False and
+an unresolved early_stopping (or shuffle), they are R190 review items unless an explicit
+random_state is passed. KMeans with a non-string
 `init` (a centroid array, callable or variable) is an R190 review item, since fixed
 centroids do not use random_state. Every other API is flagged whenever random_state
 is missing, following its scikit-learn 1.9 documentation.

@@ -137,6 +137,36 @@ def test_shuffle_defaults_and_registry_limits(source, expected):
 
 
 @pytest.mark.parametrize(
+    "estimator",
+    ["SGDClassifier", "SGDRegressor", "PassiveAggressiveClassifier", "PassiveAggressiveRegressor"],
+)
+@pytest.mark.parametrize(
+    "arguments, expected",
+    [
+        ("shuffle=False", []),
+        ("shuffle=False, early_stopping=False", []),
+        ("shuffle=False, early_stopping=True", ["R101"]),
+        ("shuffle=False, early_stopping=True, random_state=None", ["R101"]),
+        ("shuffle=False, early_stopping=True, random_state=0", []),
+        ("early_stopping=True", ["R101"]),
+        ("shuffle=False, early_stopping=stop", ["R190"]),
+        ("shuffle=False, early_stopping=stop, random_state=seed", []),
+        ("shuffle=False, **options", ["R190"]),
+        ("shuffle=False, early_stopping=True, **options", ["R190"]),
+        ("shuffle=False, early_stopping=True, random_state=seed, **options", []),
+    ],
+)
+def test_early_stopping_uses_random_state_without_shuffle(estimator, arguments, expected):
+    source = f"from sklearn.linear_model import {estimator}\n{estimator}({arguments})"
+    assert codes(source) == expected
+
+
+def test_one_class_sgd_has_no_early_stopping_split():
+    source = "from sklearn.linear_model import SGDOneClassSVM\nSGDOneClassSVM(shuffle=False)"
+    assert codes(source) == []
+
+
+@pytest.mark.parametrize(
     "body",
     [
         "np = custom\nnp.random.default_rng()",

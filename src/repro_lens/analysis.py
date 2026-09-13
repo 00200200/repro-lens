@@ -40,7 +40,8 @@ RULES = {
     "S902": "Python source failed syntax or scope validation; it was not checked.",
 }
 
-# "split": shuffle defaults to True; "cv": shuffle defaults to False; "init": random unless
+# "split": shuffle defaults to True; "cv": shuffle defaults to False; "sgd": shuffle defaults
+# to True and early_stopping to False, and either uses random_state; "init": random unless
 # init is an explicit array; "always": random_state is used whatever the other arguments.
 # APIs seeded by default (Perceptron, permutation_test_score) or random only for some
 # arguments (PCA, TruncatedSVD) are omitted.
@@ -56,11 +57,11 @@ SKLEARN = {
     "sklearn.model_selection.RepeatedKFold": "always",
     "sklearn.model_selection.RepeatedStratifiedKFold": "always",
     "sklearn.model_selection.RandomizedSearchCV": "always",
-    "sklearn.linear_model.SGDClassifier": "split",
-    "sklearn.linear_model.SGDRegressor": "split",
+    "sklearn.linear_model.SGDClassifier": "sgd",
+    "sklearn.linear_model.SGDRegressor": "sgd",
     "sklearn.linear_model.SGDOneClassSVM": "split",
-    "sklearn.linear_model.PassiveAggressiveClassifier": "split",
-    "sklearn.linear_model.PassiveAggressiveRegressor": "split",
+    "sklearn.linear_model.PassiveAggressiveClassifier": "sgd",
+    "sklearn.linear_model.PassiveAggressiveRegressor": "sgd",
     "sklearn.linear_model.RANSACRegressor": "always",
     "sklearn.neural_network.MLPClassifier": "always",
     "sklearn.neural_network.MLPRegressor": "always",
@@ -296,8 +297,26 @@ class Scanner(ast.NodeVisitor):
             kind = SKLEARN[name]
             shuffle = literal(kwargs.get("shuffle"))
             if "shuffle" not in kwargs:
-                shuffle = UNKNOWN if dynamic else kind == "split"
-            if kind in {"split", "cv"} and shuffle is False:
+                shuffle = UNKNOWN if dynamic else kind in {"split", "sgd"}
+            if kind == "sgd":
+                # Early stopping draws a validation split from random_state, even without shuffle.
+                early_stopping = literal(kwargs.get("early_stopping"))
+                if "early_stopping" not in kwargs:
+                    early_stopping = UNKNOWN if dynamic else False
+                seed = kwargs.get("random_state")
+                if shuffle is True or early_stopping is True:
+                    self.check_seed(node, name, seed, dynamic, "R101")
+                elif shuffle is False and early_stopping is False:
+                    pass
+                elif seed is None or literal(seed) is None:
+                    self.emit(
+                        node,
+                        "R190",
+                        f"Cannot resolve shuffle or early_stopping in {name}.",
+                        "Review the effective shuffle, early_stopping and random_state values.",
+                        "review",
+                    )
+            elif kind in {"split", "cv"} and shuffle is False:
                 pass
             elif kind in {"split", "cv"} and shuffle is not True:
                 self.emit(
