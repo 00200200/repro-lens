@@ -1,0 +1,20 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff check
+        entry: uv run --locked ruff check --fix
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: Ruff format
+        entry: uv run --locked ruff format
+        language: system
+        types: [python]
+      - id: repro-lens
+        name: Repro Lens
+        entry: uv run --locked repro-lens check
+        language: system
+        files: '\.(py|toml|lock)$'
+        require_serial: true
+        always_run: true

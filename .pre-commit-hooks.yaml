@@ -1,0 +1,10 @@
+- id: repro-lens
+  name: Repro Lens — reproducibility screening
+  entry: repro-lens check
+  language: python
+  language_version: python3
+  types: [file]
+  files: '\.(py|toml|lock)$'
+  require_serial: true
+  always_run: true
+  description: Import-aware Python screening and explicit project policy checks; never runs training.

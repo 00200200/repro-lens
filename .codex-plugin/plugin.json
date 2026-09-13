@@ -1,0 +1,18 @@
+{
+  "name": "repro-lens",
+  "version": "0.1.0",
+  "description": "Audit ML reproducibility with static checks and local experiment replay.",
+  "author": {
+    "name": "00200200"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Repro Lens",
+    "shortDescription": "Inspect and verify ML experiment repeatability.",
+    "longDescription": "Use the reproducibility skill to inspect ML projects, run the shared checker and interpret experiment replay evidence.",
+    "developerName": "00200200",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use $reproducibility to inspect this ML project and address reproducibility blockers."
+  }
+}

@@ -1,0 +1,8 @@
+[experiment]
+seed = 1729
+test_size = 0.25
+data = "data/raw/synthetic.csv"
+
+[model]
+C = 1.0
+max_iter = 200
