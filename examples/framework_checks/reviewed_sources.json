@@ -8,11 +8,11 @@
     "expected_findings": [
       {
         "line": 42,
-        "code": "R190",
-        "severity": "review"
+        "code": "R104",
+        "severity": "warning"
       }
     ],
-    "review": "R190 at line 42: the parameter dictionary is passed through a variable. Human review sees gblinear with an omitted updater, but the scanner intentionally does not resolve dictionary variables."
+    "review": "R104 at line 42: the once-assigned gblinear parameter dictionary is used once in a later direct training call. The omitted updater selects shotgun, a documented nondeterministic algorithm. No training or observed output mismatch is claimed."
   },
   {
     "repository": "microsoft/LightGBM",

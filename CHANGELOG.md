@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Resolve directly assigned, single-use framework parameter dictionaries while keeping mutations, escapes, repeated uses and unresolved scopes advisory.
+
 ## 0.3.0 — 2026-09-13
 
 - Add seven documented framework checks for XGBoost, LightGBM, PyTorch, TensorFlow and Lightning, with advisory review findings for settings that may be controlled elsewhere.

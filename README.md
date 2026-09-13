@@ -24,6 +24,8 @@ of these frameworks to scan their code.
 
 Known risks are warnings; settings that may be controlled elsewhere are nonblocking
 `review` items. Native boosting `train`/`cv` calls accept inline parameter dictionaries.
+The development checkout also resolves simple dictionaries assigned once and used
+once in the same block of code.
 Aliases and justified suppressions work across frameworks. See the exact
 [API coverage, examples and limits](docs/frameworks.md).
 
@@ -33,8 +35,8 @@ Run the dependency-free [framework examples](examples/framework_checks/):
 uv run --no-dev python examples/framework_checks/demo.py
 ```
 
-These checks are included in v0.3.0. Use the versioned installation below, or
-`uv tool install .` from this checkout.
+The seven framework checks are included in v0.3.0. Use the versioned installation
+below, or `uv tool install .` from this checkout for the newer named-dictionary support.
 
 ## Try the before/after demo
 
