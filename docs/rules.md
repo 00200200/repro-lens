@@ -85,10 +85,23 @@ class keyword arguments are also checked in the enclosing scope. For example,
 NumPy module. Definition annotations and implicit calls made by decorators or
 metaclasses are not analyzed. This addition is not included in v0.3.0.
 
+On the development branch, Jupyter notebooks (`.ipynb`, nbformat 4) are also
+checked. Code cells are joined in file order, so an import in one cell resolves in
+later cells. Findings report the cell number (counting all cells) and the line within
+that cell, for example `explore.ipynb:cell 3:2:15`. Line magics, shell commands (`!`),
+`x = !cmd` captures and `obj?` help lines are skipped. As in IPython 7.34, 8.12 and
+9.17, such a command ends at its line unless the line ends with a backslash; brackets
+and quotes inside it do not continue it, so the next line is checked as Python. Cell
+magics other than `%%time`, `%%timeit`, `%%capture` and `%%prun` are skipped; the bodies
+of those four are checked. A cell that is not valid Python, including a magic whose
+arguments continue over brackets on the next line, is reported as S902 with its
+location, and the other cells are still checked. Execution order,
+execution counts and saved outputs are not analyzed, and `.ipynb_checkpoints` is
+skipped. This addition is not included in v0.3.0.
+
 Wrappers, monkeypatches, star/dynamic imports, complex control flow and imports after
-function definitions can be missed. This is not a whole-program analyzer. Notebook
-cells are outside this version's coverage. Only `.py` files are inspected;
-escaping paths and generated directories are skipped. Git file discovery honors
+function definitions can be missed. This is not a whole-program analyzer. Only `.py`
+and `.ipynb` files are inspected; escaping paths and generated directories are skipped. Git file discovery honors
 exclusions; without Git, default directory exclusions and configured globs apply.
 
 Project policy is optional; no folder layout is universally required:

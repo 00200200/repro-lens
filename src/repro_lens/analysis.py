@@ -22,9 +22,13 @@ class Finding:
     severity: str
     message: str
     suggestion: str
+    cell: int | None = None  # 1-based notebook cell; line is then relative to that cell.
 
     def to_dict(self):
-        return asdict(self)
+        data = asdict(self)
+        if self.cell is None:
+            del data["cell"]
+        return data
 
 
 RULES = {

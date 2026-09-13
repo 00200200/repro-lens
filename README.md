@@ -210,8 +210,9 @@ uv build
 
 Contributions need both a failure example and valid code that the rule must leave alone. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [architecture decision](docs/architecture.md).
 
-Early release: framework coverage is deliberately limited to documented APIs. Notebook cells,
-arbitrary wrappers and whole-program data flow are not yet supported. `init` still generates
+Early release: framework coverage is deliberately limited to documented APIs. Arbitrary
+wrappers, whole-program data flow and notebook execution order are not yet supported;
+notebook code cells are checked on the development branch. `init` still generates
 a scikit-learn project; `verify` and `compare` use a framework-independent output contract.
 The package is not published to PyPI. No comparative accuracy or SOTA claim is made.
 
