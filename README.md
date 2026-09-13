@@ -23,7 +23,8 @@ of these frameworks to scan their code.
 | Lightning | Trainer determinism, warning-only mode and benchmarking |
 
 Known risks are warnings; settings that may be controlled elsewhere are nonblocking
-`review` items. Native boosting `train`/`cv` calls accept inline parameter dictionaries.
+`review` items. Native boosting `train`/`cv` calls accept inline parameter dictionaries
+and simple dictionaries assigned once and used once in the same block of code.
 Aliases and justified suppressions work across frameworks. See the exact
 [API coverage, examples and limits](docs/frameworks.md).
 

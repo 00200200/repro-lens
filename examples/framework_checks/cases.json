@@ -7,8 +7,8 @@
   },
   {
     "name": "LightGBM CPU histogram",
-    "before": "import lightgbm as lgb\nlgb.train({'deterministic': True}, train_data)\n",
-    "after": "import lightgbm as lgb\nlgb.train({'deterministic': True, 'force_col_wise': True, 'seed': seed}, train_data)\n",
+    "before": "import lightgbm as lgb\nparams = {'deterministic': True}\nlgb.train(params, train_data)\n",
+    "after": "import lightgbm as lgb\nparams = {'deterministic': True, 'force_col_wise': True, 'seed': seed}\nlgb.train(params, train_data)\n",
     "expected": ["R105", "review"]
   },
   {

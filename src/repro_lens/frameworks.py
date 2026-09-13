@@ -30,7 +30,7 @@ def constant(node):
 
 @dataclass
 class Arguments:
-    """Resolve only inline arguments, preserving uncertainty and dictionary overwrite order."""
+    """Resolve literal arguments and eligible named maps, preserving uncertainty and order."""
 
     values: dict = field(default_factory=dict)
     unknown: bool = False
@@ -43,13 +43,15 @@ class Arguments:
         self.values.update(other.values)
 
     @classmethod
-    def mapping(cls, node):
+    def mapping(cls, node, resolve=None):
+        if resolve is not None:
+            node = resolve(node)
         if not isinstance(node, ast.Dict):
             return cls(unknown=True)
         result = cls()
         for key, value in zip(node.keys, node.values, strict=True):
             if key is None:
-                result.merge(cls.mapping(value))
+                result.merge(cls.mapping(value, resolve))
             elif isinstance(constant(key), str):
                 result.values[constant(key)] = value
             else:
@@ -57,7 +59,7 @@ class Arguments:
         return result
 
     @classmethod
-    def call(cls, node, positions=()):
+    def call(cls, node, positions=(), resolve=None):
         result = cls()
         for index, argument in enumerate(node.args):
             if isinstance(argument, ast.Starred):
@@ -68,7 +70,7 @@ class Arguments:
                 result.values[positions[index]] = argument
         for keyword in node.keywords:
             if keyword.arg is None:
-                expanded = cls.mapping(keyword.value)
+                expanded = cls.mapping(keyword.value, resolve)
                 # Unlike dict displays, duplicate call keywords raise TypeError rather
                 # than overwrite explicit arguments. Keep explicit values when unknown.
                 result.unknown |= expanded.unknown
@@ -202,7 +204,7 @@ def check_lightgbm(node, name, options, emit):
             )
 
 
-def check_data(node, name, emit):
+def check_data(node, name, emit, resolve):
     positions = (
         ("dataset", "lengths", "generator")
         if name in SPLITS
@@ -222,7 +224,7 @@ def check_data(node, name, emit):
             "generator",
         )
     )
-    options = Arguments.call(node, positions)
+    options = Arguments.call(node, positions, resolve)
     if name in LOADERS:
         shuffle = options.value("shuffle", False)
         if shuffle is False or shuffle is None:
@@ -244,8 +246,8 @@ def check_data(node, name, emit):
         )
 
 
-def check_trainer(node, name, emit):
-    options = Arguments.call(node)
+def check_trainer(node, name, emit, resolve):
+    options = Arguments.call(node, resolve=resolve)
     deterministic = options.value("deterministic", None)
     benchmark = options.value("benchmark", None)
     if deterministic is UNKNOWN or benchmark is UNKNOWN:
@@ -261,8 +263,8 @@ def check_trainer(node, name, emit):
         )
 
 
-def check_algorithms(node, name, emit):
-    options = Arguments.call(node, ("mode",))
+def check_algorithms(node, name, emit, resolve):
+    options = Arguments.call(node, ("mode",), resolve)
     mode = options.value("mode")
     warn = options.value("warn_only", False)
     if mode is UNKNOWN or warn is UNKNOWN:
@@ -278,16 +280,16 @@ def check_algorithms(node, name, emit):
         )
 
 
-def check_call(node, name, emit):
+def check_call(node, name, emit, resolve=None):
     if name in XGBOOST or name in {
         "xgboost.train",
         "xgboost.cv",
         "xgboost.training.train",
         "xgboost.training.cv",
     }:
-        options = Arguments.call(node, ("params",))
+        options = Arguments.call(node, ("params",), resolve)
         if name not in XGBOOST:
-            options = Arguments.mapping(options.get("params"))
+            options = Arguments.mapping(options.get("params"), resolve)
         check_xgboost(node, name, options, emit)
     elif name in LIGHTGBM or name in {
         "lightgbm.train",
@@ -295,12 +297,12 @@ def check_call(node, name, emit):
         "lightgbm.engine.train",
         "lightgbm.engine.cv",
     }:
-        options = Arguments.call(node, ("params",))
+        options = Arguments.call(node, ("params",), resolve)
         if name not in LIGHTGBM:
-            options = Arguments.mapping(options.get("params"))
+            options = Arguments.mapping(options.get("params"), resolve)
         check_lightgbm(node, name, options, emit)
     elif name in LOADERS or name in SPLITS:
-        check_data(node, name, emit)
+        check_data(node, name, emit, resolve)
     elif name in TF_NONDETERMINISTIC:
         emit(
             node,
@@ -310,9 +312,9 @@ def check_call(node, name, emit):
             "or justify intentional nondeterminism.",
         )
     elif name in TRAINERS:
-        check_trainer(node, name, emit)
+        check_trainer(node, name, emit, resolve)
     elif name == "torch.use_deterministic_algorithms":
-        check_algorithms(node, name, emit)
+        check_algorithms(node, name, emit, resolve)
 
 
 def check_assignment(node, name, value, emit):

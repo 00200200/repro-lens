@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Resolve directly assigned, single-use framework parameter dictionaries while keeping mutations, escapes, repeated uses and unresolved scopes advisory.
 - Add seven documented framework checks for XGBoost, LightGBM, PyTorch, TensorFlow and Lightning, with advisory review findings for settings that may be controlled elsewhere.
 - Resolve inline framework parameter dictionaries and literal keyword expansions while preserving uncertainty about dynamic configuration; include a dependency-free before/after scan demo.
 - Check RNG calls in lambda default arguments and preserve outer imports when a default contains another lambda.

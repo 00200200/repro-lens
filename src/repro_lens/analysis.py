@@ -10,6 +10,7 @@ import tokenize
 from dataclasses import asdict, dataclass
 
 from . import frameworks
+from .parameters import ParameterDictionaries
 
 
 @dataclass(frozen=True)
@@ -79,10 +80,11 @@ def bound_names(node):
 
 
 class Scanner(ast.NodeVisitor):
-    def __init__(self, path, symbols):
+    def __init__(self, path, symbols, tree):
         self.path = path
         self.bindings = {}
         self.findings = []
+        self.parameters = ParameterDictionaries(tree)
         self.function_locals = {}
         pending = [symbols]
         while pending:
@@ -242,7 +244,7 @@ class Scanner(ast.NodeVisitor):
 
     def visit_Call(self, node):
         name = self.qualified(node.func)
-        frameworks.check_call(node, name, self.emit)
+        frameworks.check_call(node, name, self.emit, self.parameters.resolve)
         kwargs = {kw.arg: kw.value for kw in node.keywords if kw.arg}
         dynamic = any(kw.arg is None for kw in node.keywords) or any(
             isinstance(arg, ast.Starred) for arg in node.args
@@ -311,7 +313,7 @@ def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Fi
                 "Fix syntax or scope declarations before relying on this scan.",
             )
         ], []
-    scanner = Scanner(path, symbols)
+    scanner = Scanner(path, symbols, tree)
     scanner.visit(tree)
     suppressions = {}
     invalid = []

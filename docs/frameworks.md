@@ -111,9 +111,29 @@ See the [Trainer 2.6.1 source contract](https://github.com/Lightning-AI/pytorch-
 ## Dynamic arguments and limits
 
 New framework rules resolve literal `**{...}` expansions and inline `train`/`cv`
-parameter dictionaries, including nested dictionary overwrites. Variable dictionaries,
-dynamic values and unknown expansions produce R190 when a relevant option cannot be
-resolved. Dictionary mutation and assignment aliases are not followed. Argument
+parameter dictionaries, including nested dictionary overwrites. A named dictionary
+is also resolved when it has one direct assignment (`params = {...}` or an annotated
+assignment) and one use in a later direct call in the same module/function body:
+
+```python
+import xgboost as xgb
+
+params = {"booster": "gblinear", "seed": experiment_seed}
+model = xgb.train(params, data)  # R104 at this call, not at the assignment.
+```
+
+This also supports `Model(**options)` in the framework checks. Expressions inside
+the dictionary remain unevaluated; an unknown relevant value still produces R190.
+Following [Python's binding and mutation semantics](https://docs.python.org/3/reference/simple_stmts.html#assignment-statements),
+aliases, updates, repeated uses, rebindings, captures and global/nonlocal declarations
+are not assumed safe. Even a later use/mutation or an unrelated nested binding with
+the same name rejects resolution. Branch/loop/with/try bodies, comprehensions and
+deferred consumers are unsupported. Star imports and recognized reflective namespace
+access also disable this resolution. Indirect reflection and arbitrary external
+mutation are outside the analyzer's model.
+
+Other variable dictionaries, dynamic values and unknown expansions produce R190
+when a relevant option cannot be resolved. Argument
 validity is not type-checked; documented boolean options are recognized as Python
 `True`/`False`, not coerced from strings or numbers. Existing sklearn rules keep their
 more limited expansion handling.
