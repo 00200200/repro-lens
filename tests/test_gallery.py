@@ -1,5 +1,6 @@
 """Check generated evidence, build failures, and HTML safety through the build CLI."""
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -8,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ROOT / "examples/framework_checks/cases.json"
+SCRIPTS = [{"src": "gallery.js", "defer": None}, {"src": "checker.js", "defer": None}]
 
 
 class Page(HTMLParser):
@@ -72,12 +74,33 @@ def test_gallery_renders_checked_examples_and_local_assets(tmp_path):
         assert case["expected"][0] in text
         for side in ("before", "after"):
             assert page.code[f"{case['id']}-{side}"] == case[side]
-    assert page.scripts == [{"src": "gallery.js", "defer": None}]
+    assert page.scripts == SCRIPTS
     assert (output / "gallery.js").is_file()
     assert (output / "styles.css").is_file()
     assert (output / "mark.svg").is_file()
     assert "{{CARDS}}" not in text
     assert "saved static results" in text
+    assert "not proof of repeatability" in text
+
+
+def test_live_checker_ships_the_analyzer_sources_it_loads(tmp_path):
+    result, output = build(tmp_path, json.loads(CASES.read_text()))
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads((output / "engine/manifest.json").read_text())
+    sources = sorted((ROOT / "src/repro_lens").glob("*.py"))
+    assert manifest["files"] == [path.name for path in sources]
+    for path in sources:
+        copied = (output / "engine/repro_lens" / path.name).read_bytes()
+        assert copied == path.read_bytes()
+        assert manifest["sha256"][path.name] == hashlib.sha256(copied).hexdigest()
+    for name in ("checker.js", "checker-worker.mjs"):
+        assert (output / name).read_bytes() == (ROOT / "site" / name).read_bytes()
+    worker = (output / "checker-worker.mjs").read_text()
+    # Same-origin runtime only: the gallery loads no third-party scripts.
+    assert 'from "./pyodide/pyodide.mjs"' in worker
+    assert "http" not in worker
+    text = (output / "index.html").read_text()
+    assert 'id="live-source"' in text and 'id="check"' in text
 
 
 def test_gallery_rejects_wrong_before_or_after_outcomes(tmp_path):
@@ -98,7 +121,7 @@ def test_gallery_escapes_example_text_without_expanding_template_tokens(tmp_path
     text = (output / "index.html").read_text()
     page = Page()
     page.feed(text)
-    assert page.scripts == [{"src": "gallery.js", "defer": None}]
+    assert page.scripts == SCRIPTS
     assert "&lt;script&gt;alert(&quot;example&quot;)&lt;/script&gt; {{COUNT}}" in text
     assert "&lt;img src=x onerror=alert(1)&gt;" in text
     assert "<img src=x" not in text
@@ -127,5 +150,5 @@ def test_highlighted_code_preserves_multiline_unicode_tabs_and_html_text(tmp_pat
     page.feed(text)
     for side in ("before", "after"):
         assert page.code[f"{case['id']}-{side}"] == case[side]
-    assert page.scripts == [{"src": "gallery.js", "defer": None}]
+    assert page.scripts == SCRIPTS
     assert "<b>zażółć</b>" not in text

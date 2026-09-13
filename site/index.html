@@ -13,12 +13,13 @@
   <title>Repro Lens — Change the code. Keep the evidence.</title>
   <link rel="stylesheet" href="styles.css">
   <script src="gallery.js" defer></script>
+  <script src="checker.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#examples">Skip to examples</a>
   <header class="topbar wrap">
     <a class="brand" href="./"><span class="mark" aria-hidden="true"></span>repro lens<span class="brand-label">OPEN SOURCE</span></a>
-    <nav aria-label="Main navigation"><a href="#examples">Explore</a><a href="#workflow">Workflow</a><a href="https://github.com/00200200/repro-lens/blob/main/docs/quickstart.md">Docs</a><a class="github-link" href="https://github.com/00200200/repro-lens"><span aria-hidden="true">↗</span> GitHub</a></nav>
+    <nav aria-label="Main navigation"><a href="#examples">Explore</a><a href="#check">Check your code</a><a href="#workflow">Workflow</a><a href="https://github.com/00200200/repro-lens/blob/main/docs/quickstart.md">Docs</a><a class="github-link" href="https://github.com/00200200/repro-lens"><span aria-hidden="true">↗</span> GitHub</a></nav>
   </header>
   <main>
     <div class="intro">
@@ -75,12 +76,39 @@
             <aside class="case-sidebar" hidden><div class="sidebar-heading"><span>EXAMPLES</span><p id="count" role="status">{{COUNT}} examples</p></div><nav class="case-nav" aria-label="Choose an example">{{CASE_LINKS}}</nav><p class="sidebar-note"><span class="legend-warning">● Warning</span> Known risk or policy violation.<br><span class="legend-review">● Review</span> A choice that needs context.</p></aside>
             <div class="example-stage"><p id="selection-status" class="sr-only" role="status"></p><p id="empty" hidden><strong>No matching examples.</strong><br>Try another term or reset the filters.</p><div class="examples">{{CARDS}}</div></div>
           </div>
-          <div class="explorer-footnote"><span class="evidence-label">CHECKED AT BUILD TIME</span><p>These are <strong>saved static results</strong> from the same checker as the CLI. The page does not scan pasted code or run Python. <code>seed</code> is a value you choose for your experiment.</p></div>
+          <div class="explorer-footnote"><span class="evidence-label">CHECKED AT BUILD TIME</span><p>These are <strong>saved static results</strong> from the same checker as the CLI. To scan your own code, use the <a href="#check">live check</a> below. <code>seed</code> is a value you choose for your experiment.</p></div>
         </div>
         <noscript><p>All examples and demo outcomes are shown. Search, case selection and copying need JavaScript.</p></noscript>
       </section>
+      <section class="live wrap" id="check" aria-labelledby="check-title">
+        <div class="section-heading"><div><p class="eyebrow"><span>02</span> CHECK YOUR CODE</p><h2 id="check-title">Paste your script.<br>See what it leaves to chance.</h2></div><p class="section-description">The same checker as the CLI, running in this tab.<br>Your code is not uploaded anywhere.</p></div>
+        <div class="live-checker">
+          <div class="explorer-bar"><span><span class="small-mark" aria-hidden="true">◎</span> LIVE CHECK</span><span class="build-label">Python in your browser <span aria-hidden="true">/</span> nothing uploaded</span></div>
+          <div class="live-body">
+            <div class="live-editor">
+              <div class="code-heading"><label for="live-source">your_code.py</label><button type="button" class="copy" id="live-sample" hidden>Load example</button></div>
+              <textarea id="live-source" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" aria-describedby="live-hint">from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+import numpy as np
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+noise = np.random.default_rng().normal(size=len(X_train))
+model = RandomForestClassifier(n_estimators=200)
+model.fit(X_train + noise[:, None], y_train)
+</textarea>
+              <div class="live-actions" hidden><button type="button" class="primary-button" id="live-run">Check code</button><button type="button" class="text-button" id="live-share">Copy share link</button><p id="live-hint">⌘/Ctrl + Enter to check</p></div>
+            </div>
+            <div class="live-results" id="live-results" aria-busy="false">
+              <p id="live-status" class="live-status" role="status">Press <strong>Check code</strong>. The first check downloads Python for this page (about 13&nbsp;MB, once).</p>
+              <div id="live-output"></div>
+            </div>
+          </div>
+          <div class="explorer-footnote"><span class="evidence-label">LIVE, IN YOUR BROWSER</span><p>Runs the analyzer from this build with <a href="https://pyodide.org/">Pyodide</a>, served from this site. It screens selected APIs as text and never runs your code. A clean result is not proof of repeatability.</p></div>
+        </div>
+        <noscript><p>The live check needs JavaScript. <a href="https://github.com/00200200/repro-lens#install">Install the CLI</a> to check code on your machine.</p></noscript>
+      </section>
       <section class="workflow wrap" id="workflow" aria-labelledby="workflow-title">
-        <div class="section-heading"><div><p class="eyebrow"><span>02</span> FROM CODE TO EVIDENCE</p><h2 id="workflow-title">Three questions.<br>One review workflow.</h2></div><a class="text-link" href="https://github.com/00200200/repro-lens/blob/main/docs/agent-review.md">Use it with your coding agent <span aria-hidden="true">↗</span></a></div>
+        <div class="section-heading"><div><p class="eyebrow"><span>03</span> FROM CODE TO EVIDENCE</p><h2 id="workflow-title">Three questions.<br>One review workflow.</h2></div><a class="text-link" href="https://github.com/00200200/repro-lens/blob/main/docs/agent-review.md">Use it with your coding agent <span aria-hidden="true">↗</span></a></div>
         <div class="workflow-grid">
           <div class="workflow-step"><div class="step-heading"><span>01 / BEFORE THE RUN</span><span aria-hidden="true">⌕</span></div><h3>Check the code.</h3><p>Spot known reproducibility risks with file locations. No ML dependencies needed.</p><code>repro-lens check</code><a href="https://github.com/00200200/repro-lens/blob/main/docs/trying-an-existing-project.md">Review your first findings <span aria-hidden="true">↗</span></a></div>
           <div class="workflow-step"><div class="step-heading"><span>02 / RUN IT AGAIN</span><span aria-hidden="true">↻</span></div><h3>Replay the experiment.</h3><p>Run your configured command twice. Retain metrics, artifact hashes and logs.</p><code>repro-lens verify</code><a href="https://github.com/00200200/repro-lens/blob/main/docs/verification.md">Define what should match <span aria-hidden="true">↗</span></a></div>
@@ -89,7 +117,7 @@
         <p class="workflow-limit">A match applies to the declared outputs and recorded environment. It does not establish scientific validity.</p>
       </section>
       <section class="start wrap" id="start" aria-labelledby="start-title">
-        <div class="start-copy"><p class="eyebrow"><span>03</span> MAKE IT YOURS</p><h2 id="start-title">Bring your code.<br><span>Leave with evidence.</span></h2><p>Start with the scripted demo. Then check a training script or review your agent’s next refactor.</p><p class="start-requirements">Python 3.11+ · Git · <a href="https://docs.astral.sh/uv/getting-started/installation/">uv</a><br>No ML libraries or API key for this demo.</p></div>
+        <div class="start-copy"><p class="eyebrow"><span>04</span> MAKE IT YOURS</p><h2 id="start-title">Bring your code.<br><span>Leave with evidence.</span></h2><p>Start with the scripted demo. Then check a training script or review your agent’s next refactor.</p><p class="start-requirements">Python 3.11+ · Git · <a href="https://docs.astral.sh/uv/getting-started/installation/">uv</a><br>No ML libraries or API key for this demo.</p></div>
         <div class="quickstart"><div class="quickstart-heading"><span>TERMINAL</span><button type="button" class="copy" hidden data-copy="demo-command" aria-label="Copy demo commands">Copy commands</button></div><pre><code id="demo-command">git clone https://github.com/00200200/repro-lens.git
 cd repro-lens
 uv run --no-dev python examples/agent_review/demo.py</code></pre><p>Run from a directory where <code>repro-lens</code> does not already exist. The demo runs locally and retains its reports.</p><a href="https://github.com/00200200/repro-lens#install">Install the CLI for your own project <span aria-hidden="true">↗</span></a></div>
