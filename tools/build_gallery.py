@@ -3,9 +3,12 @@
 import argparse
 import hashlib
 import html
+import io
 import json
+import keyword
 import re
 import shutil
+import tokenize
 from pathlib import Path
 
 from repro_lens.analysis import analyze
@@ -14,12 +17,41 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = "https://github.com/00200200/repro-lens"
 
 
+def highlight(source: str) -> str:
+    """Color Python tokens while preserving the exact, HTML-escaped source text."""
+    offsets = [0]
+    # Match StringIO.readline: Unicode separators inside strings are not new lines.
+    for line in source.split("\n")[:-1]:
+        offsets.append(offsets[-1] + len(line) + 1)
+    classes = {
+        tokenize.STRING: "string",
+        tokenize.NUMBER: "number",
+        tokenize.COMMENT: "comment",
+    }
+    result = []
+    cursor = 0
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        style = classes.get(token.type)
+        if token.type == tokenize.NAME and keyword.iskeyword(token.string):
+            style = "keyword"
+        if not style:
+            continue
+        start = offsets[token.start[0] - 1] + token.start[1]
+        end = offsets[token.end[0] - 1] + token.end[1]
+        result.append(html.escape(source[cursor:start]))
+        result.append(f'<span class="tok-{style}">{html.escape(source[start:end])}</span>')
+        cursor = end
+    result.append(html.escape(source[cursor:]))
+    return "".join(result)
+
+
 def build_gallery(cases_path: Path, output: Path) -> int:
     raw = cases_path.read_bytes()
     cases = json.loads(raw)
     if not isinstance(cases, list) or not cases:
         raise ValueError("The gallery needs a nonempty list of examples.")
     cards = []
+    case_links = []
     identifiers = set()
     frameworks = set()
     for case in cases:
@@ -60,7 +92,7 @@ def build_gallery(cases_path: Path, output: Path) -> int:
                 f'<button type="button" class="copy" hidden data-copy="{identifier}-{side}" '
                 f'aria-label="Copy {side} code for {escape(case["name"])}">Copy code</button></div>'
                 f'<pre tabindex="0"><code id="{identifier}-{side}">'
-                f"{escape(case[side])}</code></pre>"
+                f"{highlight(case[side])}</code></pre>"
                 f'<p class="diagnostic">{escape(diagnostic)}</p></section>'
             )
         cards.append(
@@ -77,6 +109,12 @@ def build_gallery(cases_path: Path, output: Path) -> int:
             f'<a class="case-link" href="#{identifier}">Link to this example <span '
             f'aria-hidden="true">↗</span></a></article>'
         )
+        case_links.append(
+            f'<a href="#{identifier}" data-case="{identifier}">'
+            f'<span class="nav-name">{escape(case["name"])}</span>'
+            f'<span class="nav-framework">{escape(case["framework"])}</span>'
+            f'<span class="nav-rule">{finding.code}</span></a>'
+        )
     options = "".join(
         f'<option value="{html.escape(name)}">{html.escape(name)}</option>'
         for name in sorted(frameworks, key=str.casefold)
@@ -86,6 +124,7 @@ def build_gallery(cases_path: Path, output: Path) -> int:
         engine_hash.update(path.relative_to(ROOT).as_posix().encode() + b"\0" + path.read_bytes())
     replacements = {
         "{{CARDS}}": "\n".join(cards),
+        "{{CASE_LINKS}}": "\n".join(case_links),
         "{{OPTIONS}}": options,
         "{{COUNT}}": str(len(cases)),
         "{{FRAMEWORK_COUNT}}": str(len(frameworks)),
@@ -97,7 +136,7 @@ def build_gallery(cases_path: Path, output: Path) -> int:
     rendered = re.sub(r"\{\{[A-Z_]+\}\}", lambda match: replacements[match[0]], template)
     output.mkdir(parents=True, exist_ok=True)
     (output / "index.html").write_text(rendered, encoding="utf-8")
-    for name in ("styles.css", "gallery.js"):
+    for name in ("styles.css", "gallery.js", "mark.svg"):
         shutil.copyfile(ROOT / "site" / name, output / name)
     (output / ".nojekyll").touch()
     return len(cases)

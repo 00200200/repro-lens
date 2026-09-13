@@ -2,9 +2,19 @@
 
 The public gallery at <https://00200200.github.io/repro-lens/> lets visitors browse
 before/after snippets, filter by framework or finding, copy code and link a case.
+The case navigator shows one selected example at a time, with syntax-colored code
+whose copied text remains identical to the versioned source. On mobile the case
+list scrolls horizontally. Direct links and browser history restore the chosen case.
 It is a static page. It does not run Python, accept source uploads or claim to scan
 code in the browser. All examples remain readable without JavaScript; search and
 copy controls are progressively enabled.
+
+The hero lets visitors switch between the three scripted edits in the
+[agent review demo](../examples/agent_review/README.md). It presents that demo's
+expected outcomes, already checked by CI: a refactor matches, a changed threshold
+differs, and changing the tolerance changes the comparison contract. These are
+eight-sample synthetic fixture results, not a live run, model benchmark or agent
+evaluation. All three outcomes remain readable without JavaScript.
 
 ## Build and preview
 
@@ -36,7 +46,8 @@ escaped, including code and contributor-authored descriptions.
 
 Run `uv run python examples/framework_checks/demo.py`, the gallery build, and the
 repository tests and Ruff checks. Review desktop/mobile layout and exercise search,
-combined filters, empty results, reset, copying and a direct case link when changing
+combined filters, empty results, reset, code/command copying, scenario switching,
+browser back/forward and a direct case link when changing
 the interface. Build output belongs in ignored `dist/`, not Git.
 
 ## Publishing
