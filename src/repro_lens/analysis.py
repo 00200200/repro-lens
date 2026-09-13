@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import io
 import re
+import symtable
 import tokenize
 from dataclasses import asdict, dataclass
 
@@ -32,7 +33,7 @@ RULES = {
     "P202": "Project policy or experiment configuration is invalid.",
     "P203": "A configured verification input is missing or escapes the project.",
     "S901": "A suppression needs a known rule and a nonempty justification.",
-    "S902": "Python source could not be parsed; it was not checked.",
+    "S902": "Python source failed syntax or scope validation; it was not checked.",
 }
 
 SKLEARN = {
@@ -75,10 +76,18 @@ def bound_names(node):
 
 
 class Scanner(ast.NodeVisitor):
-    def __init__(self, path):
+    def __init__(self, path, symbols):
         self.path = path
         self.bindings = {}
         self.findings = []
+        self.function_locals = {}
+        pending = [symbols]
+        while pending:
+            scope = pending.pop()
+            if isinstance(scope, symtable.Function):
+                key = (scope.get_name(), scope.get_lineno(), frozenset(scope.get_parameters()))
+                self.function_locals[key] = scope.get_locals()
+            pending.extend(scope.get_children())
 
     def emit(self, node, code, message, suggestion, severity="warning"):
         self.findings.append(
@@ -191,12 +200,14 @@ class Scanner(ast.NodeVisitor):
         self.bindings.pop(node.name, None)
         outer = self.bindings
         self.bindings = outer.copy()
-        # Python local names shadow globals throughout the function, even before assignment.
-        for child in ast.walk(node):
-            if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
-                self.bindings.pop(child.id, None)
-            elif isinstance(child, ast.arg):
-                self.bindings.pop(child.arg, None)
+        # The compiler distinguishes this function's locals from bindings in nested scopes.
+        # Locals shadow outer imports throughout the function, even before assignment.
+        parameters = frozenset(
+            arg.arg for arg in ast.iter_child_nodes(node.args) if isinstance(arg, ast.arg)
+        )
+        # Parameters distinguish a function from a same-line comprehension in its defaults.
+        for name in self.function_locals[node.name, node.lineno, parameters]:
+            self.bindings.pop(name, None)
         for statement in node.body:
             self.visit(statement)
         self.bindings = outer
@@ -277,6 +288,7 @@ class Scanner(ast.NodeVisitor):
 def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Finding]]:
     try:
         tree = ast.parse(source, filename=path)
+        symbols = symtable.symtable(source, path, "exec")
     except (SyntaxError, ValueError) as exc:
         return [
             Finding(
@@ -286,10 +298,10 @@ def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Fi
                 "S902",
                 "error",
                 str(exc),
-                "Fix parsing before relying on this scan.",
+                "Fix syntax or scope declarations before relying on this scan.",
             )
         ], []
-    scanner = Scanner(path)
+    scanner = Scanner(path, symbols)
     scanner.visit(tree)
     suppressions = {}
     invalid = []
