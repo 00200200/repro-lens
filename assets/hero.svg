@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title description">
+  <title id="title">Repro Lens — Same experiment. What changed?</title>
+  <desc id="description">Check source, replay runs, compare outputs. An illustrative comparison links a baseline to a matching refactor and a changed result.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#101e30"/><stop offset="1" stop-color="#102e36"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#64dfcf" stop-opacity=".12"/><stop offset="1" stop-color="#64dfcf" stop-opacity="0"/></radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#b0dded" stroke-opacity=".035"/></pattern>
+  </defs>
+  <rect width="1200" height="400" rx="24" fill="url(#bg)"/>
+  <rect width="1200" height="400" rx="24" fill="url(#grid)"/>
+  <ellipse cx="995" cy="160" rx="290" ry="250" fill="url(#glow)"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <g transform="translate(48 43)" fill="none" stroke="#64dfcf" stroke-width="3">
+      <circle cx="15" cy="15" r="13"/><path d="m25 25 11 11M8 15h14M15 8v14"/>
+    </g>
+    <text x="98" y="71" fill="#d6ecef" font-size="21" font-weight="600" letter-spacing="1">REPRO LENS</text>
+    <text x="48" y="154" fill="#f4f8fc" font-size="48" font-weight="700" letter-spacing="-1.5">Same experiment.</text>
+    <text x="48" y="211" fill="#64dfcf" font-size="48" font-weight="700" letter-spacing="-1.5">What changed?</text>
+    <text x="50" y="254" fill="#b5c9d8" font-size="19">Evidence for ML code and agent edits.</text>
+    <g font-size="14" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+      <rect x="48" y="306" width="116" height="38" rx="19" fill="#19343f" stroke="#33515a"/>
+      <text x="69" y="330" fill="#baf1e9">01 check</text>
+      <text x="180" y="330" fill="#69818e">→</text>
+      <rect x="210" y="306" width="128" height="38" rx="19" fill="#19343f" stroke="#33515a"/>
+      <text x="230" y="330" fill="#baf1e9">02 verify</text>
+      <text x="354" y="330" fill="#69818e">→</text>
+      <rect x="384" y="306" width="140" height="38" rx="19" fill="#19343f" stroke="#33515a"/>
+      <text x="404" y="330" fill="#baf1e9">03 compare</text>
+    </g>
+    <rect x="652" y="42" width="500" height="312" rx="18" fill="#0c1928" stroke="#2b4855"/>
+    <circle cx="676" cy="64" r="4" fill="#f7bb83"/><circle cx="690" cy="64" r="4" fill="#64dfcf"/><circle cx="704" cy="64" r="4" fill="#9ebcff"/>
+    <text x="1129" y="70" text-anchor="end" fill="#9bb1c4" font-size="12" letter-spacing="1.4">OUTPUT COMPARISON · EXAMPLE</text>
+    <path d="M652 84H1152" stroke="#263e4d"/>
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+      <text x="678" y="120" fill="#8ea8bb" font-size="12" letter-spacing="1">BASELINE</text>
+      <rect x="678" y="139" width="134" height="51" rx="9" fill="#1c3342"/>
+      <text x="745" y="169" text-anchor="middle" fill="#d8e8f6" font-size="14">report.json</text>
+      <path d="M812 165H850V144H881M850 165V232H881" fill="none" stroke="#577589" stroke-width="2"/>
+      <rect x="882" y="115" width="244" height="64" rx="9" fill="#112e30" stroke="#285652"/>
+      <circle cx="900" cy="139" r="4" fill="#64dfcf"/>
+      <text x="914" y="144" fill="#d9eeec" font-size="14">refactor</text>
+      <text x="914" y="164" fill="#64dfcf" font-size="12">matched</text>
+      <rect x="882" y="202" width="244" height="64" rx="9" fill="#30292a" stroke="#5e4540"/>
+      <circle cx="900" cy="226" r="4" fill="#f7bb83"/>
+      <text x="914" y="231" fill="#f3e5df" font-size="14">changed threshold</text>
+      <text x="914" y="251" fill="#f7bb83" font-size="12">mismatch</text>
+    </g>
+    <path d="M678 287H1126" stroke="#263e4d"/>
+    <text x="678" y="317" fill="#b5c9d8" font-size="15">Repeatable runs can still disagree with the baseline.</text>
+  </g>
+</svg>
