@@ -20,3 +20,13 @@ Use `uv run pytest`, `uv run ruff check .` and `uv run ruff format --check .`.
 Keep Repro Lens free and community-supported. Do not add paid pilots, consulting
 offers, pricing, donation links, GitHub Sponsors configuration or payment forms.
 The maintainer does not want to collect money through this project.
+
+## Product presentation
+
+The maintainer expects a polished visual design and a useful first experience.
+Show a concrete problem, understandable evidence and a clear way to try the tool.
+Preserve readable code, keyboard access, mobile layouts and shareable example links.
+Review actual desktop and mobile rendering when changing the site. Prefer focused,
+working interactions over decorative controls or a long undifferentiated feature list.
+Claims of SOTA, superiority or adoption need comparative evidence; presentation alone
+does not establish them. Keep demo outcomes and live execution clearly distinguished.

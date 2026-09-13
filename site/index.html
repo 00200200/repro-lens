@@ -3,67 +3,101 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Explore ML reproducibility risks with checked before-and-after Python examples. Browse by framework, copy a snippet, and contribute a case.">
-  <meta name="theme-color" content="#142d2c">
-  <title>Repro Lens — explore reproducibility checks</title>
+  <meta name="description" content="Change your ML code with evidence. Explore reproducibility checks, replay experiments, and compare outputs before and after an edit. Free and open source.">
+  <meta name="theme-color" content="#111513">
+  <meta property="og:title" content="Repro Lens — Change the code. Keep the evidence.">
+  <meta property="og:description" content="Reproducibility checks for ML developers and coding agents. Explore checked examples and see why repeatable does not mean unchanged.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://00200200.github.io/repro-lens/">
+  <link rel="icon" href="mark.svg" type="image/svg+xml">
+  <title>Repro Lens — Change the code. Keep the evidence.</title>
   <link rel="stylesheet" href="styles.css">
   <script src="gallery.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#examples">Skip to examples</a>
-  <header class="topbar">
-    <a class="brand" href="./"><span class="mark" aria-hidden="true">◎</span> Repro Lens</a>
-    <nav aria-label="Main navigation">
-      <a href="https://github.com/00200200/repro-lens#install">Install</a>
-      <a href="https://github.com/00200200/repro-lens/blob/main/CONTRIBUTING.md">Contribute</a>
-      <a href="https://github.com/00200200/repro-lens">GitHub <span aria-hidden="true">↗</span></a>
-    </nav>
+  <header class="topbar wrap">
+    <a class="brand" href="./"><span class="mark" aria-hidden="true"></span>repro lens<span class="brand-label">OPEN SOURCE</span></a>
+    <nav aria-label="Main navigation"><a href="#examples">Explore</a><a href="#workflow">Workflow</a><a href="https://github.com/00200200/repro-lens/blob/main/docs/quickstart.md">Docs</a><a class="github-link" href="https://github.com/00200200/repro-lens"><span aria-hidden="true">↗</span> GitHub</a></nav>
   </header>
   <main>
-    <section class="hero" aria-labelledby="title">
-      <div class="hero-copy">
-        <p class="eyebrow">OPEN SOURCE · PYTHON &amp; ML</p>
-        <h1 id="title">A seed is a start.<br><span>Check the rest.</span></h1>
-        <p class="lead">Explore a reproducibility risk, compare the code, and see what the checker finds. No installation needed.</p>
-        <a class="primary-link" href="#examples">Explore {{COUNT}} examples <span aria-hidden="true">↓</span></a>
-      </div>
-      <aside class="hero-note" aria-label="How to read the examples">
-        <p class="note-label">READ THE EVIDENCE</p>
-        <p><span class="status-dot warning-dot"></span><strong>Warning</strong><br>A covered policy violation or known risk.</p>
-        <p><span class="status-dot review-dot"></span><strong>Review</strong><br>A setting that needs context. Advisory, not blocking.</p>
-        <p class="note-footer">{{COUNT}} code pairs · {{FRAMEWORK_COUNT}} frameworks &amp; libraries</p>
-      </aside>
-    </section>
-    <section class="browser" id="examples" aria-label="Example gallery">
-      <div class="section-heading"><div><p class="eyebrow">FIND YOUR CASE</p><h2>Small examples. Explicit choices.</h2></div>
-        <p id="count" role="status">{{COUNT}} examples</p>
-      </div>
-      <div class="filters" hidden>
-        <div class="search-field"><label for="search">Search examples</label><input id="search" type="search" placeholder="Try DataLoader, seed, or R104…" autocomplete="off"></div>
-        <div><label for="framework">Framework or library</label><select id="framework"><option value="">All frameworks &amp; libraries</option>{{OPTIONS}}</select></div>
-        <div><label for="severity">Finding</label><select id="severity"><option value="">All findings</option><option value="warning">Warning</option><option value="review">Review</option></select></div>
-        <button class="reset" type="button" id="reset">Reset filters</button>
-      </div>
-      <p class="context">These are <strong>saved static results from the Repro Lens checker</strong>, generated from the versioned examples when this site is built. This page does not execute Python or scan pasted code. In the snippets, <code>seed</code> stands for the seed chosen for your experiment.</p>
-      <noscript><p>All examples are available below. Search and copy buttons need JavaScript.</p></noscript>
-      <p id="empty" hidden>No examples match. Try another term or reset the filters.</p>
-      <div class="examples">{{CARDS}}</div>
-      <p id="copy-status" class="copy-status" role="status"></p>
-    </section>
-    <section class="next-steps" aria-labelledby="next-title">
-      <div><p class="eyebrow">TAKE THE NEXT STEP</p><h2 id="next-title">Try your code. Share what you find.</h2><p>A static scan is one piece of evidence. Repro Lens can also replay an experiment and compare retained outputs before and after an edit.</p></div>
-      <div class="next-links">
-        <a href="https://github.com/00200200/repro-lens/blob/main/docs/trying-an-existing-project.md">Check an existing project <span aria-hidden="true">↗</span></a>
-        <a href="https://github.com/00200200/repro-lens/tree/main/examples/xgboost_review">Run the XGBoost CPU example <span aria-hidden="true">↗</span></a>
-        <a href="https://github.com/00200200/repro-lens/issues/new?template=problem.yml">Report a false alarm or missed call <span aria-hidden="true">↗</span></a>
-        <a href="https://github.com/00200200/repro-lens/blob/main/CONTRIBUTING.md#contribute-an-example">Contribute a small example <span aria-hidden="true">↗</span></a>
-      </div>
-    </section>
+    <div class="intro">
+      <section class="hero wrap" aria-labelledby="title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="live-dot" aria-hidden="true"></span> FOR ML DEVELOPERS &amp; CODING AGENTS</p>
+          <h1 id="title">Change the code.<br><span>Keep the<br class="wide-break"> evidence.</span></h1>
+          <p class="lead">Your refactor runs. But did it change the result? Catch reproducibility risks, replay experiments, and compare what actually changed.</p>
+          <div class="hero-actions"><a class="primary-link" href="#examples">Explore the checks <span aria-hidden="true">↘</span></a><a class="quiet-link" href="#start">Run the demo <span aria-hidden="true">↗</span></a></div>
+          <p class="hero-footnote">Free &amp; open source <span aria-hidden="true">/</span> No API key <span aria-hidden="true">/</span> Runs locally</p>
+        </div>
+        <div class="demo-wrap">
+          <div class="demo" aria-label="Scripted change comparison demo">
+            <div class="window-bar"><span class="window-dots" aria-hidden="true">● ● ●</span><span>experiment / change review</span><span class="demo-label">DEMO</span></div>
+            <div class="demo-intro"><span class="eyebrow">ONE EXPERIMENT. THREE EDITS.</span><h2>A repeatable change can<br>still change the result.</h2></div>
+            <div class="scenario-buttons" role="group" aria-label="Choose a scripted edit" hidden><button type="button" data-scenario="refactor" aria-pressed="false">Refactor</button><button type="button" data-scenario="threshold" aria-pressed="true">Change threshold</button><button type="button" data-scenario="tolerance" aria-pressed="false">Relax tolerance</button></div>
+            <section class="scenario" id="demo-refactor" aria-label="Refactor outcome">
+              <p class="diff-filename">experiment.py <span>equivalent conditional</span></p>
+              <pre class="diff"><code><span class="removed">− return int(score &gt;= THRESHOLD)</span><span class="added">+ return 1 if score &gt;= THRESHOLD else 0</span></code></pre>
+              <div class="demo-results"><div><span>Two runs after the edit</span><strong class="result-match">✓ Matched</strong></div><div><span>Compare with baseline</span><strong class="result-match">✓ Matched</strong></div><div><span>Fixture accuracy</span><strong>1.00 <span aria-hidden="true">→</span> 1.00</strong></div></div>
+              <p class="demo-verdict good">Same declared outputs. Code change recorded.</p>
+            </section>
+            <section class="scenario" id="demo-threshold" aria-label="Changed threshold outcome">
+              <p class="diff-filename">experiment.py <span>classification threshold</span></p>
+              <pre class="diff"><code><span class="removed">− THRESHOLD = 0.5</span><span class="added">+ THRESHOLD = 0.7</span></code></pre>
+              <div class="demo-results"><div><span>Two runs after the edit</span><strong class="result-match">✓ Matched</strong></div><div><span>Compare with baseline</span><strong class="result-mismatch">↗ Mismatch</strong></div><div><span>Fixture accuracy</span><strong>1.00 <span aria-hidden="true">→</span> 0.75</strong></div></div>
+              <p class="demo-verdict">Repeatable on its own. Different from the baseline.</p>
+            </section>
+            <section class="scenario" id="demo-tolerance" aria-label="Changed tolerance outcome">
+              <p class="diff-filename">pyproject.toml <span>after changing the threshold</span></p>
+              <pre class="diff"><code><span class="removed">− atol = 0.0</span><span class="added">+ atol = 0.3</span></code></pre>
+              <div class="demo-results"><div><span>Two runs after the edit</span><strong class="result-match">✓ Matched</strong></div><div><span>Compare with baseline</span><strong class="result-review">! Not comparable</strong></div><div><span>Fixture accuracy</span><strong>1.00 <span aria-hidden="true">→</span> 0.75</strong></div></div>
+              <p class="demo-verdict review-verdict">The contract changed. Review the new tolerance.</p>
+            </section>
+            <p class="demo-provenance">Expected outcomes from our <a href="https://github.com/00200200/repro-lens/tree/main/examples/agent_review">CI-checked demo</a>. Eight synthetic samples; scripted edits. This preview does not execute code.</p>
+          </div>
+          <p class="demo-caption"><span aria-hidden="true">↳</span> A successful run is only the beginning.</p>
+        </div>
+      </section>
+      <div class="framework-strip wrap"><p>SELECTED API CHECKS FOR</p><div><span>scikit-learn</span><span>XGBoost</span><span>LightGBM</span><span>PyTorch</span><span>TensorFlow</span><span>Lightning</span></div><a href="https://github.com/00200200/repro-lens/blob/main/docs/frameworks.md">See coverage <span aria-hidden="true">↗</span></a></div>
+    </div>
+    <div class="content">
+      <section class="browser wrap" id="examples" aria-label="Example gallery">
+        <div class="section-heading"><div><p class="eyebrow"><span>01</span> EXPLORE THE CHECKER</p><h2>Small change.<br>Important difference.</h2></div><p class="section-description">Pick a case. See what the checker finds.<br>Take an explicit alternative back to your code.</p></div>
+        <div class="explorer">
+          <div class="explorer-bar"><span><span class="small-mark" aria-hidden="true">◎</span> CHECK EXPLORER</span><span class="build-label">{{COUNT}} cases <span aria-hidden="true">/</span> {{FRAMEWORK_COUNT}} libraries &amp; frameworks</span></div>
+          <div class="filters" hidden>
+            <div class="search-field"><label for="search">Search examples</label><div class="search-input"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search code, framework, or rule…" autocomplete="off"></div></div>
+            <div><label for="framework">Framework or library</label><select id="framework"><option value="">All frameworks</option>{{OPTIONS}}</select></div>
+            <div><label for="severity">Finding</label><select id="severity"><option value="">All findings</option><option value="warning">Warning</option><option value="review">Review</option></select></div>
+            <button class="reset" type="button" id="reset">Reset</button>
+          </div>
+          <div class="explorer-body">
+            <aside class="case-sidebar" hidden><div class="sidebar-heading"><span>EXAMPLES</span><p id="count" role="status">{{COUNT}} examples</p></div><nav class="case-nav" aria-label="Choose an example">{{CASE_LINKS}}</nav><p class="sidebar-note"><span class="legend-warning">● Warning</span> Known risk or policy violation.<br><span class="legend-review">● Review</span> A choice that needs context.</p></aside>
+            <div class="example-stage"><p id="selection-status" class="sr-only" role="status"></p><p id="empty" hidden><strong>No matching examples.</strong><br>Try another term or reset the filters.</p><div class="examples">{{CARDS}}</div></div>
+          </div>
+          <div class="explorer-footnote"><span class="evidence-label">CHECKED AT BUILD TIME</span><p>These are <strong>saved static results</strong> from the same checker as the CLI. The page does not scan pasted code or run Python. <code>seed</code> is a value you choose for your experiment.</p></div>
+        </div>
+        <noscript><p>All examples and demo outcomes are shown. Search, case selection and copying need JavaScript.</p></noscript>
+      </section>
+      <section class="workflow wrap" id="workflow" aria-labelledby="workflow-title">
+        <div class="section-heading"><div><p class="eyebrow"><span>02</span> FROM CODE TO EVIDENCE</p><h2 id="workflow-title">Three questions.<br>One review workflow.</h2></div><a class="text-link" href="https://github.com/00200200/repro-lens/blob/main/docs/agent-review.md">Use it with your coding agent <span aria-hidden="true">↗</span></a></div>
+        <div class="workflow-grid">
+          <div class="workflow-step"><div class="step-heading"><span>01 / BEFORE THE RUN</span><span aria-hidden="true">⌕</span></div><h3>Check the code.</h3><p>Spot known reproducibility risks with file locations. No ML dependencies needed.</p><code>repro-lens check</code><a href="https://github.com/00200200/repro-lens/blob/main/docs/trying-an-existing-project.md">Review your first findings <span aria-hidden="true">↗</span></a></div>
+          <div class="workflow-step"><div class="step-heading"><span>02 / RUN IT AGAIN</span><span aria-hidden="true">↻</span></div><h3>Replay the experiment.</h3><p>Run your configured command twice. Retain metrics, artifact hashes and logs.</p><code>repro-lens verify</code><a href="https://github.com/00200200/repro-lens/blob/main/docs/verification.md">Define what should match <span aria-hidden="true">↗</span></a></div>
+          <div class="workflow-step"><div class="step-heading"><span>03 / AFTER THE EDIT</span><span aria-hidden="true">⇄</span></div><h3>Compare the evidence.</h3><p>See whether a change preserves baseline outputs or needs a closer review.</p><code>repro-lens compare before.json after.json</code><a href="https://github.com/00200200/repro-lens/tree/main/examples/xgboost_review">Try the XGBoost CPU example <span aria-hidden="true">↗</span></a></div>
+        </div>
+        <p class="workflow-limit">A match applies to the declared outputs and recorded environment. It does not establish scientific validity.</p>
+      </section>
+      <section class="start wrap" id="start" aria-labelledby="start-title">
+        <div class="start-copy"><p class="eyebrow"><span>03</span> MAKE IT YOURS</p><h2 id="start-title">Bring your code.<br><span>Leave with evidence.</span></h2><p>Start with the scripted demo. Then check a training script or review your agent’s next refactor.</p><p class="start-requirements">Python 3.11+ · Git · <a href="https://docs.astral.sh/uv/getting-started/installation/">uv</a><br>No ML libraries or API key for this demo.</p></div>
+        <div class="quickstart"><div class="quickstart-heading"><span>TERMINAL</span><button type="button" class="copy" hidden data-copy="demo-command" aria-label="Copy demo commands">Copy commands</button></div><pre><code id="demo-command">git clone https://github.com/00200200/repro-lens.git
+cd repro-lens
+uv run --no-dev python examples/agent_review/demo.py</code></pre><p>Run from a directory where <code>repro-lens</code> does not already exist. The demo runs locally and retains its reports.</p><a href="https://github.com/00200200/repro-lens#install">Install the CLI for your own project <span aria-hidden="true">↗</span></a></div>
+      </section>
+      <section class="contribute wrap" aria-label="Community"><div><p class="eyebrow">BUILT IN THE OPEN</p><h2>One useful example<br>can help the next person.</h2></div><div><p>Found a false alarm, a missed call, or a better example? That’s a good contribution.</p><div class="contribute-links"><a class="dark-link" href="https://github.com/00200200/repro-lens/blob/main/CONTRIBUTING.md#contribute-an-example">Contribute an example <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/00200200/repro-lens/issues/new?template=problem.yml">Report a problem <span aria-hidden="true">↗</span></a></div></div></section>
+    </div>
   </main>
-  <footer>
-    <p><strong>Repro Lens</strong> · Free, community-supported, MIT licensed.</p>
-    <p>Selected APIs only. A clean static scan or two matching runs does not establish scientific validity. <a href="https://github.com/00200200/repro-lens/blob/main/docs/frameworks.md">Coverage and limits</a></p>
-    <details><summary>Where these results come from</summary><p>Generated with the same analyzer as the CLI, using <a href="https://github.com/00200200/repro-lens/blob/main/examples/framework_checks/cases.json">versioned source examples</a>. Frameworks are not imported and no training is run while building this gallery.</p><p>Example data SHA-256: <code>{{CASES_HASH}}</code></p><p>Checker source SHA-256: <code>{{ENGINE_HASH}}</code></p></details>
-  </footer>
+  <footer class="wrap"><div class="footer-top"><a class="brand" href="./"><span class="mark" aria-hidden="true"></span>repro lens</a><p>Free. Community-supported. MIT licensed.</p><a href="https://github.com/00200200/repro-lens">Source on GitHub <span aria-hidden="true">↗</span></a></div><div class="footer-bottom"><p>Selected APIs only. <a href="https://github.com/00200200/repro-lens/blob/main/docs/frameworks.md">Coverage &amp; limits</a></p><details><summary>Example provenance</summary><p>Generated with the same analyzer as the CLI, using <a href="https://github.com/00200200/repro-lens/blob/main/examples/framework_checks/cases.json">versioned source examples</a>. Frameworks are not imported and no training is run while building the gallery.</p><p>Example data SHA-256: <code>{{CASES_HASH}}</code></p><p>Checker source SHA-256: <code>{{ENGINE_HASH}}</code></p></details></div></footer>
+  <p id="copy-status" class="copy-status" role="status"></p>
 </body>
 </html>

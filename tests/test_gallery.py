@@ -16,6 +16,8 @@ class Page(HTMLParser):
         self.articles = []
         self.scripts = []
         self.code_ids = []
+        self.code = {}
+        self.active_code = None
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -25,6 +27,16 @@ class Page(HTMLParser):
             self.scripts.append(attrs)
         if tag == "code" and "id" in attrs:
             self.code_ids.append(attrs["id"])
+            self.active_code = attrs["id"]
+            self.code[self.active_code] = ""
+
+    def handle_endtag(self, tag):
+        if tag == "code":
+            self.active_code = None
+
+    def handle_data(self, data):
+        if self.active_code:
+            self.code[self.active_code] += data
 
 
 def build(tmp_path, cases):
@@ -55,12 +67,15 @@ def test_gallery_renders_checked_examples_and_local_assets(tmp_path):
     page = Page()
     page.feed(text)
     assert {article["id"] for article in page.articles} == {case["id"] for case in cases}
-    assert len(page.code_ids) == len(set(page.code_ids)) == 2 * len(cases)
+    assert len(page.code_ids) == len(set(page.code_ids)) == 2 * len(cases) + 1
     for case in cases:
         assert case["expected"][0] in text
+        for side in ("before", "after"):
+            assert page.code[f"{case['id']}-{side}"] == case[side]
     assert page.scripts == [{"src": "gallery.js", "defer": None}]
     assert (output / "gallery.js").is_file()
     assert (output / "styles.css").is_file()
+    assert (output / "mark.svg").is_file()
     assert "{{CARDS}}" not in text
     assert "saved static results" in text
 
@@ -95,3 +110,22 @@ def test_gallery_rejects_duplicate_deep_link_ids(tmp_path):
     assert result.returncode != 0
     assert "duplicate example id" in result.stderr
     assert not (output / "index.html").exists()
+
+
+def test_highlighted_code_preserves_multiline_unicode_tabs_and_html_text(tmp_path):
+    case = json.loads(CASES.read_text())[0]
+    extra = (
+        '\ntext = """<b>zażółć</b>\u2028separator\n{{COUNT}} & <script>"""\n'
+        "if True:\n\tvalue = 2.5  # <tag>\n"
+    )
+    case["before"] += extra
+    case["after"] += extra
+    result, output = build(tmp_path, [case])
+    assert result.returncode == 0, result.stderr
+    text = (output / "index.html").read_text()
+    page = Page()
+    page.feed(text)
+    for side in ("before", "after"):
+        assert page.code[f"{case['id']}-{side}"] == case[side]
+    assert page.scripts == [{"src": "gallery.js", "defer": None}]
+    assert "<b>zażółć</b>" not in text
