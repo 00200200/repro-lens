@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Check `random_state` for 34 more scikit-learn APIs, including SGD models, MLP, KMeans, Gaussian mixtures, gradient boosting, bagging, TSNE, RandomizedSearchCV and `utils.shuffle`/`resample`. APIs seeded by default or random only for some arguments stay out of the registry.
 - Check calls in function/class decorators, class bases and class keyword arguments using enclosing import bindings.
 - Resolve directly assigned, single-use framework parameter dictionaries while keeping mutations, escapes, repeated uses and unresolved scopes advisory.
 

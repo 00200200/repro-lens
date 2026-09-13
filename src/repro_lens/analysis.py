@@ -40,21 +40,59 @@ RULES = {
     "S902": "Python source failed syntax or scope validation; it was not checked.",
 }
 
+# "split": shuffle defaults to True; "cv": shuffle defaults to False; "init": random unless
+# init is an explicit array; "always": random_state is used whatever the other arguments.
+# APIs seeded by default (Perceptron, permutation_test_score) or random only for some
+# arguments (PCA, TruncatedSVD) are omitted.
 SKLEARN = {
     "sklearn.model_selection.train_test_split": "split",
     "sklearn.model_selection.KFold": "cv",
     "sklearn.model_selection.StratifiedKFold": "cv",
+    "sklearn.model_selection.StratifiedGroupKFold": "cv",
+    "sklearn.model_selection.learning_curve": "cv",
     "sklearn.model_selection.ShuffleSplit": "always",
     "sklearn.model_selection.StratifiedShuffleSplit": "always",
     "sklearn.model_selection.GroupShuffleSplit": "always",
     "sklearn.model_selection.RepeatedKFold": "always",
     "sklearn.model_selection.RepeatedStratifiedKFold": "always",
+    "sklearn.model_selection.RandomizedSearchCV": "always",
+    "sklearn.linear_model.SGDClassifier": "split",
+    "sklearn.linear_model.SGDRegressor": "split",
+    "sklearn.linear_model.SGDOneClassSVM": "split",
+    "sklearn.linear_model.PassiveAggressiveClassifier": "split",
+    "sklearn.linear_model.PassiveAggressiveRegressor": "split",
+    "sklearn.linear_model.RANSACRegressor": "always",
+    "sklearn.neural_network.MLPClassifier": "always",
+    "sklearn.neural_network.MLPRegressor": "always",
+    "sklearn.neural_network.BernoulliRBM": "always",
+    "sklearn.cluster.KMeans": "init",
+    "sklearn.cluster.MiniBatchKMeans": "always",
+    "sklearn.cluster.BisectingKMeans": "always",
+    "sklearn.mixture.GaussianMixture": "always",
+    "sklearn.mixture.BayesianGaussianMixture": "always",
     "sklearn.ensemble.RandomForestClassifier": "always",
     "sklearn.ensemble.RandomForestRegressor": "always",
     "sklearn.ensemble.ExtraTreesClassifier": "always",
     "sklearn.ensemble.ExtraTreesRegressor": "always",
+    "sklearn.ensemble.GradientBoostingClassifier": "always",
+    "sklearn.ensemble.GradientBoostingRegressor": "always",
+    "sklearn.ensemble.BaggingClassifier": "always",
+    "sklearn.ensemble.BaggingRegressor": "always",
+    "sklearn.ensemble.IsolationForest": "always",
+    "sklearn.ensemble.RandomTreesEmbedding": "always",
     "sklearn.tree.DecisionTreeClassifier": "always",
     "sklearn.tree.DecisionTreeRegressor": "always",
+    "sklearn.tree.ExtraTreeClassifier": "always",
+    "sklearn.tree.ExtraTreeRegressor": "always",
+    "sklearn.decomposition.LatentDirichletAllocation": "always",
+    "sklearn.manifold.TSNE": "always",
+    "sklearn.kernel_approximation.RBFSampler": "always",
+    "sklearn.kernel_approximation.Nystroem": "always",
+    "sklearn.random_projection.GaussianRandomProjection": "always",
+    "sklearn.random_projection.SparseRandomProjection": "always",
+    "sklearn.inspection.permutation_importance": "always",
+    "sklearn.utils.shuffle": "always",
+    "sklearn.utils.resample": "always",
     "sklearn.datasets.make_classification": "always",
     "sklearn.datasets.make_regression": "always",
     "sklearn.datasets.make_blobs": "always",
@@ -269,6 +307,19 @@ class Scanner(ast.NodeVisitor):
                     "Review the effective shuffle and random_state values.",
                     "review",
                 )
+            elif (
+                kind == "init" and "init" in kwargs and not isinstance(literal(kwargs["init"]), str)
+            ):
+                # Centroid arrays are deterministic; a callable or variable cannot be decided.
+                seed = kwargs.get("random_state")
+                if seed is None or literal(seed) is None:
+                    self.emit(
+                        node,
+                        "R190",
+                        f"Cannot resolve whether init in {name} uses random_state.",
+                        "Review the effective init and random_state values.",
+                        "review",
+                    )
             else:
                 self.check_seed(node, name, kwargs.get("random_state"), dynamic, "R101")
         elif name in {"numpy.random.default_rng", "numpy.random.RandomState", "random.Random"}:
