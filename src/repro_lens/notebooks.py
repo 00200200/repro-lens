@@ -10,30 +10,29 @@ import re
 PYTHON_CELL_MAGICS = {"time", "timeit", "capture", "prun"}
 SHELL_ASSIGNMENT = re.compile(r"(\s*)([\w.\[\], ]+?)\s*=\s*[!%]")
 HELP = re.compile(r"\s*(\?\??[\w.]+|[\w.]+\?\??)\s*")
-OPEN, CLOSE = "([{", ")]}"
 
 
 def ipython_placeholders(lines: list[str]) -> list[str]:
-    """Replace IPython-only lines, and their continuations, keeping indentation and numbering."""
-    result, depth, continued, indent = [], 0, False, ""
+    """Replace IPython-only lines, and their continuations, keeping indentation and numbering.
+
+    As in IPython 7–9, a line magic or shell command ends at its line unless the line ends
+    with a backslash. Brackets and quotes in the command never continue it, so the next
+    line stays Python.
+    """
+    result, continued, indent = [], False, ""
     for line in lines:
-        stripped = line.strip()
         if continued:
             result.append(f"{indent}pass")
-        elif stripped.startswith(("%", "!")) or HELP.fullmatch(line):
+        elif line.strip().startswith(("%", "!")) or HELP.fullmatch(line):
             indent = line[: len(line) - len(line.lstrip())]
             result.append(f"{indent}pass")
-            depth = 0
         elif assignment := SHELL_ASSIGNMENT.match(line):
             indent = assignment[1]
             result.append(f"{indent}{assignment[2]} = None")
-            depth = 0
         else:
             result.append(line)
             continue
-        # A magic or shell command continues over open brackets or a trailing backslash.
-        depth += sum(line.count(c) for c in OPEN) - sum(line.count(c) for c in CLOSE)
-        continued = depth > 0 or line.rstrip().endswith("\\")
+        continued = line.endswith("\\")
     return result
 
 
@@ -73,11 +72,15 @@ def notebook_source(
     for number, cell in enumerate(cells, start=1):
         if not isinstance(cell, dict) or cell.get("cell_type") != "code":
             continue
-        code = cell_lines(cell.get("source", ""))
+        source = cell.get("source", "")
+        code = cell_lines(source)
         try:
             ast.parse("\n".join(code))
         except SyntaxError as exc:
-            invalid.append((number, exc.lineno or 1, exc.msg))
+            original = "".join(source) if isinstance(source, list) else source
+            skipped = code != (original.splitlines() or [""])
+            context = " after skipping IPython commands" if skipped else ""
+            invalid.append((number, exc.lineno or 1, f"{exc.msg}{context}"))
             code = ["pass"] * len(code)
         for line_number, line in enumerate(code, start=1):
             lines.append(line)

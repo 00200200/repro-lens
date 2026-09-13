@@ -53,7 +53,6 @@ def test_findings_point_to_the_cell_and_line(tmp_path):
         "files = !ls data",
         "timing = %timeit -o sum(range(10))",
         "for name in names:\n    !echo $name",
-        "%timeit np.fromiter((x for x in names),\n                    dtype=float, count=3)",
         "!saved_model_cli show --dir '{path}' \\\n                      --tag_set serve",
         "np.random?",
         "??train_test_split",
@@ -70,6 +69,44 @@ def test_ipython_syntax_is_skipped_without_hiding_later_cells(tmp_path, cell):
         )
     )
     assert [(f["code"], f["cell"]) for f in check(tmp_path)["findings"]] == [("R102", 3)]
+
+
+@pytest.mark.parametrize(
+    "cell, line",
+    [
+        ('!echo "("\nrandom.Random()', 2),
+        ("!echo (\nrandom.Random()", 2),
+        ("!echo hi  # (\nrandom.Random()", 2),
+        ('%timeit f("(")\nrandom.Random()', 2),
+        ("%time x = 1  # (\nrandom.Random()", 2),
+        ('files = !ls "("\nrandom.Random()', 2),
+        ('for name in names:\n    !echo "("\nrandom.Random()', 3),
+        ("!pip install \\\n    numpy\nrandom.Random()", 3),
+        ("!pip install \\\nnumpy \\\nscipy\nrandom.Random()", 4),
+        ("%timeit f() \\\n  + 1\nrandom.Random()", 3),
+        ("!pip install \\  \nrandom.Random()", 2),
+    ],
+)
+def test_python_after_an_ipython_command_in_the_same_cell_is_checked(tmp_path, cell, line):
+    # IPython 7.34, 8.12 and 9.17 end a line magic or shell command at its line unless
+    # it ends with a backslash; quoted, commented or unbalanced brackets do not continue it.
+    (tmp_path / "same_cell.ipynb").write_text(notebook("import random\nnames = []", cell))
+    findings = check(tmp_path)["findings"]
+    assert [(f["code"], f["cell"], f["line"]) for f in findings] == [("R103", 2, line)]
+
+
+def test_bracket_continued_magic_is_reported_instead_of_hiding_code(tmp_path):
+    # IPython keeps the second line as Python, so this cell is invalid when run.
+    (tmp_path / "magic.ipynb").write_text(
+        notebook(
+            "import random",
+            "%timeit sum((x for x in range(3)),\n    start=0)\nrandom.Random()",
+            "random.Random()",
+        )
+    )
+    findings = check(tmp_path)["findings"]
+    assert [(f["code"], f["cell"]) for f in findings] == [("S902", 2), ("R103", 3)]
+    assert "after skipping IPython commands" in findings[0]["message"]
 
 
 def test_python_cell_magic_body_is_checked():

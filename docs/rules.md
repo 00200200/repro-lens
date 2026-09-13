@@ -66,10 +66,13 @@ On the development branch, Jupyter notebooks (`.ipynb`, nbformat 4) are also
 checked. Code cells are joined in file order, so an import in one cell resolves in
 later cells. Findings report the cell number (counting all cells) and the line within
 that cell, for example `explore.ipynb:cell 3:2:15`. Line magics, shell commands (`!`),
-their bracket or backslash continuations, `x = !cmd` captures and `obj?` help lines
-are skipped. So are cell magics other than `%%time`, `%%timeit`, `%%capture` and
-`%%prun`, whose bodies are checked. A cell that is not valid Python is reported as
-S902 with its location, and the other cells are still checked. Execution order,
+`x = !cmd` captures and `obj?` help lines are skipped. As in IPython 7.34, 8.12 and
+9.17, such a command ends at its line unless the line ends with a backslash; brackets
+and quotes inside it do not continue it, so the next line is checked as Python. Cell
+magics other than `%%time`, `%%timeit`, `%%capture` and `%%prun` are skipped; the bodies
+of those four are checked. A cell that is not valid Python, including a magic whose
+arguments continue over brackets on the next line, is reported as S902 with its
+location, and the other cells are still checked. Execution order,
 execution counts and saved outputs are not analyzed, and `.ipynb_checkpoints` is
 skipped. This addition is not included in v0.3.0.
 
