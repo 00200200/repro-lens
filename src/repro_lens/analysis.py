@@ -201,6 +201,8 @@ class Scanner(ast.NodeVisitor):
     visit_DictComp = visit_ListComp
 
     def visit_FunctionDef(self, node):
+        for decorator in node.decorator_list:
+            self.visit(decorator)
         for default in [*node.args.defaults, *node.args.kw_defaults]:
             if default:
                 self.visit(default)
@@ -222,6 +224,9 @@ class Scanner(ast.NodeVisitor):
     visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_ClassDef(self, node):
+        # Header expressions run in the enclosing scope before the class is bound.
+        for expression in [*node.decorator_list, *node.bases, *node.keywords]:
+            self.visit(expression)
         self.bindings.pop(node.name, None)
         outer = self.bindings
         self.bindings = outer.copy()
