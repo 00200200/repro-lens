@@ -18,8 +18,7 @@ Paths after `check` are relative to `--root`. The report is written relative to 
 current directory. `--fail-on error` keeps warnings advisory; configuration and
 source errors still fail the command. Check `files_checked` in the JSON report:
 a missing, excluded or unsupported file can leave you with zero files inspected.
-v0.3.0 checks `.py` files only; the development branch also checks notebook code
-cells (see [rules and limits](rules.md)).
+v0.3.1 also checks notebook code cells (see [rules and limits](rules.md)).
 
 ## Review the findings
 
@@ -52,7 +51,7 @@ pre-commit. For an advisory rollout, the hook accepts the same option:
 ```yaml
 repos:
   - repo: https://github.com/00200200/repro-lens
-    rev: v0.3.0
+    rev: v0.3.1
     hooks:
       - id: repro-lens
         args: [--fail-on, error]

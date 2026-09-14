@@ -78,10 +78,10 @@ change preserves predictions on a small synthetic fixture.
 With [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```bash
-uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.3.0'
+uv tool install 'git+https://github.com/00200200/repro-lens.git@v0.3.1'
 ```
 
-Or use `pip install 'git+https://github.com/00200200/repro-lens.git@v0.3.0'` in a virtual environment. Both commands require Git. No NumPy, scikit-learn or API key is needed for static checks.
+Or use `pip install 'git+https://github.com/00200200/repro-lens.git@v0.3.1'` in a virtual environment. Both commands require Git. No NumPy, scikit-learn or API key is needed for static checks.
 
 [Walk through a complete example](docs/quickstart.md), or scan a project you already have:
 
@@ -136,9 +136,9 @@ Run the dependency-free [framework examples](examples/framework_checks/):
 uv run --no-dev python examples/framework_checks/demo.py
 ```
 
-The seven framework checks are included in v0.3.0. Use the versioned installation
-above, or `uv tool install .` from this checkout for the newer named-dictionary support
-and the global RNG reviews (R111–R114).
+The framework checks, notebook scanning, named-dictionary support and global RNG
+reviews (R111–R114) are included in v0.3.1. Use the versioned installation above,
+or `uv tool install .` from this checkout.
 
 ## Try a complete experiment
 
@@ -164,7 +164,7 @@ Add this to `.pre-commit-config.yaml`. [pre-commit](https://pre-commit.com/#inst
 ```yaml
 repos:
   - repo: https://github.com/00200200/repro-lens
-    rev: v0.3.0
+    rev: v0.3.1
     hooks:
       - id: repro-lens
 ```
