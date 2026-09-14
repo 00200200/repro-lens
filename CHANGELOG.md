@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-No unreleased changes.
+- Review pandas `sample()` calls without `random_state` in files that import pandas and never seed NumPy's global RNG (R115).
 
 ## 0.3.1 — 2026-09-14
 
