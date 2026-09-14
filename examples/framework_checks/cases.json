@@ -52,6 +52,19 @@
     ]
   },
   {
+    "id": "python-global-shuffle",
+    "name": "Python global shuffle",
+    "framework": "Python",
+    "question": "Make module-level random state explicit.",
+    "explanation": "random.shuffle draws from Python's module-level generator, and this file never seeds it. A dedicated Random instance keeps the experiment's policy visible; seeding may also happen elsewhere, so this remains a review item.",
+    "before": "import random\nrandom.shuffle(items)\n",
+    "after": "import random\nrng = random.Random(seed)\nrng.shuffle(items)\n",
+    "expected": [
+      "R112",
+      "review"
+    ]
+  },
+  {
     "name": "XGBoost linear updater",
     "before": "import xgboost as xgb\nxgb.XGBRegressor(booster='gblinear', random_state=seed)\n",
     "after": "import xgboost as xgb\nxgb.XGBRegressor(booster='gblinear', updater='coord_descent', random_state=seed)\n",
