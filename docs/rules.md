@@ -83,13 +83,13 @@ For example, `lambda rng=random.Random(): rng` reports R103 when `random` is the
 imported module. The lambda's parameters shadow imports in its body; parameters of
 a nested lambda in a default do not hide imports used by the outer lambda.
 
-On the development branch, calls in function/class decorators, class bases and
+Calls in function/class decorators, class bases and
 class keyword arguments are also checked in the enclosing scope. For example,
 `@configure(rng=np.random.default_rng())` reports R102 when `np` is the imported
 NumPy module. Definition annotations and implicit calls made by decorators or
-metaclasses are not analyzed. This addition is not included in v0.3.0.
+metaclasses are not analyzed.
 
-On the development branch, Jupyter notebooks (`.ipynb`, nbformat 4) are also
+Jupyter notebooks (`.ipynb`, nbformat 4) are also
 checked. Code cells are joined in file order, so an import in one cell resolves in
 later cells. Findings report the cell number (counting all cells) and the line within
 that cell, for example `explore.ipynb:cell 3:2:15`. Line magics, shell commands (`!`),
@@ -101,7 +101,7 @@ of those four are checked. A cell that is not valid Python, including a magic wh
 arguments continue over brackets on the next line, is reported as S902 with its
 location, and the other cells are still checked. Execution order,
 execution counts and saved outputs are not analyzed, and `.ipynb_checkpoints` is
-skipped. This addition is not included in v0.3.0.
+skipped.
 
 Wrappers, monkeypatches, star/dynamic imports, complex control flow and imports after
 function definitions can be missed. This is not a whole-program analyzer. Only `.py`
