@@ -2,12 +2,7 @@
 
 ## Unreleased
 
-- Review uses of NumPy, Python, PyTorch and TensorFlow global RNGs in files that never seed them (R111–R114), recognizing cross-library helpers such as `seed_everything`, `transformers.set_seed` and `keras.utils.set_random_seed`.
-- Check pasted Python in the browser gallery. The analyzer runs locally with a pinned, integrity-checked Pyodide served from the site; code is not uploaded or executed, and share links keep it in the URL fragment.
-- Check Jupyter notebook code cells and report findings by cell and line. IPython magics and shell commands are skipped; an invalid cell is reported without stopping the rest of the notebook. The pre-commit hook now passes staged `.ipynb` files.
-- Check `random_state` for 34 more scikit-learn APIs, including SGD models, MLP, KMeans, Gaussian mixtures, gradient boosting, bagging, TSNE, RandomizedSearchCV and `utils.shuffle`/`resample`. APIs seeded by default or random only for some arguments stay out of the registry.
-- Check calls in function/class decorators, class bases and class keyword arguments using enclosing import bindings.
-- Resolve directly assigned, single-use framework parameter dictionaries while keeping mutations, escapes, repeated uses and unresolved scopes advisory.
+No unreleased changes.
 
 ## 0.3.1 — 2026-09-14
 
