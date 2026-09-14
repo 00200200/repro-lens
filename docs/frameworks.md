@@ -161,6 +161,32 @@ analyzed. Primary references: [NumPy legacy random](https://numpy.org/doc/stable
 [PyTorch reproducibility](https://docs.pytorch.org/docs/2.8/notes/randomness.html) and
 [`tf.random.set_seed`](https://www.tensorflow.org/api_docs/python/tf/random/set_seed).
 
+## pandas sampling — R115 (review, development checkout)
+
+```python
+import pandas as pd
+
+train = frame.sample(frac=0.8)  # R115 review: no random_state, NumPy never seeded here.
+train = frame.sample(frac=0.8, random_state=seed)  # No finding.
+```
+
+With `random_state=None`, pandas' `DataFrame.sample`, `Series.sample` and
+`GroupBy.sample` draw from `numpy.random`, the legacy global state
+([pandas 3.0 `random_state` helper](https://github.com/pandas-dev/pandas/blob/v3.0.0/pandas/core/common.py)).
+So a file that seeds NumPy (`np.random.seed`, `np.random.set_state` or a cross-library
+helper listed above) gets no finding, and an explicit non-None `random_state` is
+accepted without evaluating it.
+
+The receiver's type is not resolved. A call is treated as pandas sampling only when
+the file imports pandas, the method is `.sample`, and the arguments fit pandas'
+signature: only keywords, among `n`, `frac`, `replace`, `weights`, `axis`,
+`ignore_index` and `random_state`. This keeps `random.sample(items, 3)`,
+`rng.sample(population, k=3)`, `dist.sample((5,))`, scikit-learn's `gmm.sample(100)` and
+`kde.sample(n_samples=44)`, and Polars' `seed=` out of the rule. It also means
+positional calls such as `frame.sample(5)`, `frame.sample()` and `**` expansions are
+not reported. A file that handles
+DataFrames without importing pandas is not checked.
+
 ## Dynamic arguments and limits
 
 New framework rules resolve literal `**{...}` expansions and inline `train`/`cv`
