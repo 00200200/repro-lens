@@ -1,0 +1,49 @@
+name: Repro Lens
+description: Flag ML reproducibility risks in Python code and notebooks, without running them.
+author: 00200200
+branding:
+  icon: repeat
+  color: green
+inputs:
+  root:
+    description: Project directory to check, relative to the workspace.
+    default: .
+  fail-on:
+    description: Fail the step on `warning` (warnings and errors) or only on `error`.
+    default: warning
+  sarif-file:
+    description: Also write a SARIF 2.1.0 report to this path, for upload to code scanning.
+    default: ''
+runs:
+  using: composite
+  steps:
+    - id: python
+      shell: bash
+      run: |
+        for candidate in python3 python; do
+          if command -v "$candidate" >/dev/null &&
+            "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+            echo "command=$candidate" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+        done
+        echo "command=" >> "$GITHUB_OUTPUT"
+    - if: steps.python.outputs.command == ''
+      uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+    - shell: bash
+      env:
+        PYTHON: ${{ steps.python.outputs.command }}
+        ROOT: ${{ inputs.root }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        SARIF_FILE: ${{ inputs.sarif-file }}
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        if [ -n "$PYTHON" ]; then
+          run=("$PYTHON")
+        else
+          run=(uv run --no-project --python 3.13 python)
+        fi
+        if [ -n "$SARIF_FILE" ]; then
+          "${run[@]}" -m repro_lens check --root "$ROOT" --format sarif --output "$SARIF_FILE" --fail-on "$FAIL_ON" || [ $? -eq 1 ]
+        fi
+        "${run[@]}" -m repro_lens check --root "$ROOT" --format github --fail-on "$FAIL_ON"

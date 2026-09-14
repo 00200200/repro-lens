@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-No unreleased changes.
+- Report static check findings as SARIF 2.1.0 (`--format sarif`) or GitHub Actions annotations (`--format github`), with rule links and notebook cell locations in the message.
+- Add a composite GitHub Action that annotates pull requests, optionally writes SARIF for code scanning, and fails according to `fail-on`.
+- State in the report limitations that global RNG seeding is recognized only within the same file.
 
 ## 0.3.1 — 2026-09-14
 

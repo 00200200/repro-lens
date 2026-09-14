@@ -26,6 +26,12 @@
 `--fail-on warning` is the default. Review items never fail the hook; choose
 `--fail-on error` when warnings should remain advisory.
 
+`--format sarif` writes SARIF 2.1.0 with one rule entry per code above; errors, warnings
+and review items become SARIF `error`, `warning` and `note` results. `--format github`
+prints GitHub Actions `::error`, `::warning` and `::notice` commands. In both formats a
+notebook finding points at the notebook file, because a cell line has no line in the
+`.ipynb` JSON; the cell and line are the start of the message.
+
 See [framework coverage](frameworks.md) for R104–R114: exact APIs, primary sources,
 passing examples and limits. These rules share the CLI, hook and skill engine.
 

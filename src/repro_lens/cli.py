@@ -12,6 +12,7 @@ from . import __version__
 from .analysis import RULES
 from .comparison import compare_reports, render_comparison
 from .project import check, render
+from .sarif import render_sarif, to_github
 from .verify import verify
 
 
@@ -48,6 +49,15 @@ def initialize(destination: Path, name: str):
     return destination
 
 
+def repository_prefix(root: Path) -> str:
+    """Code scanning resolves paths from the checkout, so prefix a root inside the cwd."""
+    try:
+        relative = root.resolve().relative_to(Path.cwd().resolve())
+    except ValueError:
+        return ""
+    return "" if relative == Path(".") else relative.as_posix()
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Reproducibility evidence for ML projects")
     parser.add_argument("--version", action="version", version=__version__)
@@ -57,7 +67,9 @@ def main(argv=None):
         "files", nargs="*", help="Selected project-relative paths; defaults to all Python files"
     )
     scan.add_argument("--root", type=Path, default=Path.cwd())
-    scan.add_argument("--format", choices=["text", "json", "markdown"], default="text")
+    scan.add_argument(
+        "--format", choices=["text", "json", "markdown", "sarif", "github"], default="text"
+    )
     scan.add_argument("--output", type=Path)
     scan.add_argument("--fail-on", choices=["warning", "error"], default="warning")
     replay = sub.add_parser(
@@ -97,7 +109,12 @@ def main(argv=None):
             print(render(report, args.format), end="")
             return {"matched": 0, "mismatch": 1, "error": 2}[report["status"]]
         report = check(args.root, args.files)
-        output = render(report, args.format)
+        if args.format in {"sarif", "github"}:
+            prefix = repository_prefix(args.root)
+            renderer = render_sarif if args.format == "sarif" else to_github
+            output = renderer(report, prefix)
+        else:
+            output = render(report, args.format)
         if args.output:
             args.output.write_text(output, encoding="utf-8")
         else:
