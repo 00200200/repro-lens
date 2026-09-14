@@ -13,6 +13,10 @@ RULES = {
     "R108": "A TensorFlow generator is initialized from nondeterministic state.",
     "R109": "Lightning Trainer's deterministic configuration needs review.",
     "R110": "PyTorch deterministic algorithms are disabled or only warn on unsupported ops.",
+    "R111": "NumPy's global RNG is used, but this file never seeds it.",
+    "R112": "Python's global random module is used, but this file never seeds it.",
+    "R113": "PyTorch's global RNG is used, but this file never seeds it.",
+    "R114": "TensorFlow's global RNG is used, but this file never seeds it.",
 }
 
 MISSING = object()
@@ -127,6 +131,129 @@ TF_NONDETERMINISTIC = {
 }
 LOADERS = {"torch.utils.data.DataLoader", "torch.utils.data.dataloader.DataLoader"}
 SPLITS = {"torch.utils.data.random_split", "torch.utils.data.dataset.random_split"}
+
+
+# Global RNG state. Each library's seeder list follows its primary documentation:
+# numpy.random.seed (legacy RandomState), random.seed, torch.manual_seed and
+# tf.random.set_seed. Cross-library helpers seed several at once.
+GLOBAL_RNG = {
+    "numpy": {
+        "code": "R111",
+        "label": "NumPy's global RNG",
+        "seeders": {"numpy.random.seed", "numpy.random.set_state"},
+        "consumers": {
+            f"numpy.random.{name}"
+            for name in (
+                "rand random randn random_sample ranf sample randint random_integers "
+                "choice shuffle permutation bytes normal standard_normal uniform binomial "
+                "poisson beta gamma exponential laplace lognormal geometric multinomial "
+                "dirichlet multivariate_normal"
+            ).split()
+        },
+        "hint": "numpy.random.seed(seed), or a numpy.random.default_rng(seed) Generator",
+    },
+    "python": {
+        "code": "R112",
+        "label": "Python's global random module",
+        "seeders": {"random.seed", "random.setstate"},
+        "consumers": {
+            f"random.{name}"
+            for name in (
+                "random randint randrange choice choices sample shuffle uniform gauss "
+                "normalvariate triangular betavariate expovariate getrandbits randbytes"
+            ).split()
+        },
+        "hint": "random.seed(seed), or a random.Random(seed) instance",
+    },
+    "torch": {
+        "code": "R113",
+        "label": "PyTorch's global RNG",
+        "seeders": {
+            "torch.manual_seed",
+            "torch.random.manual_seed",
+            "torch.random.set_rng_state",
+            "torch.set_rng_state",
+        },
+        "consumers": {
+            f"torch.{name}"
+            for name in (
+                "rand randn randint randperm rand_like randn_like randint_like bernoulli "
+                "multinomial normal poisson"
+            ).split()
+        }
+        | {
+            f"torch.nn.init.{name}"
+            for name in (
+                "uniform_ normal_ trunc_normal_ xavier_uniform_ xavier_normal_ "
+                "kaiming_uniform_ kaiming_normal_ orthogonal_ sparse_"
+            ).split()
+        },
+        "hint": "torch.manual_seed(seed), or pass generator=torch.Generator().manual_seed(seed)",
+    },
+    "tensorflow": {
+        "code": "R114",
+        "label": "TensorFlow's global RNG",
+        "seeders": {
+            "tensorflow.random.set_seed",
+            "tensorflow.compat.v1.set_random_seed",
+            "tensorflow.compat.v1.random.set_random_seed",
+        },
+        "consumers": {
+            f"tensorflow.random.{name}"
+            for name in "normal uniform truncated_normal shuffle categorical gamma poisson".split()
+        },
+        "hint": "tf.random.set_seed(seed), or a tf.random.Generator.from_seed(seed)",
+    },
+}
+# Helpers that seed several libraries at once, per their documentation.
+CROSS_SEEDERS = {
+    **{
+        f"{module}.seed_everything": {"python", "numpy", "torch"}
+        for module in ("lightning", "lightning.pytorch", "lightning.fabric", "pytorch_lightning")
+    },
+    "transformers.set_seed": {"python", "numpy", "torch"},
+    "transformers.trainer_utils.set_seed": {"python", "numpy", "torch"},
+    "accelerate.utils.set_seed": {"python", "numpy", "torch"},
+    "keras.utils.set_random_seed": {"python", "numpy", "tensorflow"},
+    "tensorflow.keras.utils.set_random_seed": {"python", "numpy", "tensorflow"},
+}
+SEEDERS = {
+    **{name: {library} for library, spec in GLOBAL_RNG.items() for name in spec["seeders"]},
+    **CROSS_SEEDERS,
+}
+CONSUMERS = {name: library for library, spec in GLOBAL_RNG.items() for name in spec["consumers"]}
+
+
+def global_consumer(node, name):
+    """Return the library whose global RNG this call draws from, or None."""
+    library = CONSUMERS.get(name)
+    if library is None:
+        return None
+    # A torch generator= or TensorFlow seed= argument makes the call independent of
+    # the global state (an operation seed alone gives a repeatable sequence).
+    explicit = {"torch": "generator", "tensorflow": "seed"}.get(library)
+    for keyword in node.keywords:
+        if keyword.arg == explicit and constant(keyword.value) is not None:
+            return None
+        if keyword.arg is None:
+            return None  # An expansion may carry that argument; stay silent.
+    return library
+
+
+def report_global_rng(uses, seeded, emit):
+    """Emit one review item per global RNG use in a file that never seeds that library."""
+    for node, name, library in uses:
+        if library in seeded:
+            continue
+        spec = GLOBAL_RNG[library]
+        emit(
+            node,
+            spec["code"],
+            f"{name} draws from {spec['label']}, which this file never seeds.",
+            f"Seed it in the reviewed entrypoint, for example {spec['hint']}, "
+            "or justify seeding that happens elsewhere.",
+            "review",
+        )
 
 
 def unresolved(node, name, emit):

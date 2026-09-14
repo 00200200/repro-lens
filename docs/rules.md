@@ -12,6 +12,10 @@
 | R108 | warning | TensorFlow explicitly initializes a nondeterministic RNG |
 | R109 | review | Lightning Trainer does not request strict determinism without benchmarking |
 | R110 | review | PyTorch deterministic algorithms are disabled or warning-only |
+| R111 | review | NumPy's global RNG is used in a file that never seeds it |
+| R112 | review | Python's global random module is used in a file that never seeds it |
+| R113 | review | PyTorch's global RNG is used in a file that never seeds it |
+| R114 | review | TensorFlow's global RNG is used in a file that never seeds it |
 | R190 | review | Dynamic arguments or framework configuration prevent a decision |
 | P201 | error | A file required by this project's policy is missing |
 | P202 | error | Project configuration is invalid |
@@ -22,7 +26,7 @@
 `--fail-on warning` is the default. Review items never fail the hook; choose
 `--fail-on error` when warnings should remain advisory.
 
-See [framework coverage](frameworks.md) for R104–R110: exact APIs, primary sources,
+See [framework coverage](frameworks.md) for R104–R114: exact APIs, primary sources,
 passing examples and limits. These rules share the CLI, hook and skill engine.
 
 Supported sklearn APIs are the explicit registry in `analysis.py`:

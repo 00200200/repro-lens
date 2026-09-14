@@ -121,6 +121,7 @@ of these frameworks to scan their code.
 | PyTorch | DataLoader/random_split generators, cuDNN benchmarking and deterministic mode |
 | TensorFlow | Generators explicitly initialized from nondeterministic state |
 | Lightning | Trainer determinism, warning-only mode and benchmarking |
+| Global RNG state | NumPy, Python, PyTorch or TensorFlow global randomness used in a file that never seeds it (review) |
 
 Known risks are warnings; settings that may be controlled elsewhere are nonblocking
 `review` items. Native boosting `train`/`cv` calls accept inline parameter dictionaries.
@@ -136,7 +137,8 @@ uv run --no-dev python examples/framework_checks/demo.py
 ```
 
 The seven framework checks are included in v0.3.0. Use the versioned installation
-above, or `uv tool install .` from this checkout for the newer named-dictionary support.
+above, or `uv tool install .` from this checkout for the newer named-dictionary support
+and the global RNG reviews (R111–R114).
 
 ## Try a complete experiment
 

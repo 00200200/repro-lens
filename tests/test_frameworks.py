@@ -228,6 +228,64 @@ def test_framework_aliases_shadowing_and_justified_suppression(module, call, cod
     assert [(f.code, f.line, f.path) for f in suppressed] == [(code, 2, "train.py")]
 
 
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("import numpy as np\nnp.random.shuffle(x)", ["R111"]),
+        ("import numpy as np\nnp.random.seed(seed)\nnp.random.shuffle(x)", []),
+        ("import numpy as np\nnp.random.shuffle(x)\nnp.random.seed(seed)", []),
+        ("from numpy.random import randint\nrandint(3)", ["R111"]),
+        ("from numpy.random import seed, randint\nseed(0)\nrandint(3)", []),
+        ("import numpy as np\nrng = np.random.default_rng(seed)\nrng.shuffle(x)", []),
+        ("import random\nrandom.shuffle(x)", ["R112"]),
+        ("import random\nrandom.seed(seed)\nrandom.shuffle(x)", []),
+        ("import random\nrandom.Random(seed).shuffle(x)", []),
+        ("import torch\ntorch.randn(3)", ["R113"]),
+        ("import torch\ntorch.manual_seed(seed)\ntorch.randn(3)", []),
+        ("import torch\ntorch.cuda.manual_seed_all(seed)\ntorch.randn(3)", ["R113"]),
+        ("import torch\ntorch.randn(3, generator=g)", []),
+        ("import torch\ntorch.randn(3, generator=None)", ["R113"]),
+        ("import torch\ntorch.randn(3, **options)", []),
+        ("from torch.nn import init\ninit.kaiming_normal_(w)", ["R113"]),
+        ("import torch\ntorch.manual_seed(seed)\ntorch.nn.init.xavier_uniform_(w)", []),
+        ("import tensorflow as tf\ntf.random.normal([2])", ["R114"]),
+        ("import tensorflow as tf\ntf.random.set_seed(seed)\ntf.random.normal([2])", []),
+        ("import tensorflow as tf\ntf.random.normal([2], seed=seed)", []),
+        ("import tensorflow as tf\ntf.random.stateless_normal([2], seed=[1, 2])", []),
+        ("import keras\nimport numpy as np\nkeras.utils.set_random_seed(1)\nnp.random.rand()", []),
+        (
+            "import numpy as np\nimport torch\nfrom lightning import seed_everything\n"
+            "seed_everything(seed)\nnp.random.rand()\ntorch.rand(2)",
+            [],
+        ),
+        (
+            "import numpy as np\nimport torch\nfrom transformers import set_seed\n"
+            "set_seed(seed)\nnp.random.rand()\ntorch.rand(2)",
+            [],
+        ),
+        ("import numpy as np\nimport torch\ntorch.manual_seed(seed)\nnp.random.rand()", ["R111"]),
+        ("import numpy as np\nnp.random.default_rng()", ["R102"]),
+        ("import numpy as np\nnp.random.rand()\nnp.random.default_rng(seed)", ["R111"]),
+        ("import app\napp.random.shuffle(x)", []),
+        ("def f(random):\n    random.shuffle(x)", []),
+    ],
+)
+def test_global_rng_use_is_reviewed_when_the_file_never_seeds_it(source, expected):
+    assert [item[0] for item in findings(source)] == expected
+
+
+def test_global_rng_findings_are_review_items_with_locations():
+    active, suppressed = analyze(
+        "import numpy as np\n\ndef batch():\n    return np.random.permutation(10)\n"
+        "\nnoise = np.random.normal(size=3)  # repro-lens: ignore[R111] -- Seeded by run.py.\n",
+        "train.py",
+    )
+    assert [(f.code, f.severity, f.line, f.column) for f in active] == [("R111", "review", 4, 12)]
+    assert "np.random.seed" not in active[0].message
+    assert "numpy.random.permutation draws from NumPy's global RNG" in active[0].message
+    assert [(f.code, f.line) for f in suppressed] == [("R111", 6)]
+
+
 def test_direct_imports_and_lambda_defaults():
     assert findings(
         "from tensorflow.random import Generator as RNG\n"
@@ -277,7 +335,7 @@ def test_framework_demo_checks_expected_results_and_detects_a_lost_warning(tmp_p
     result = subprocess.run(command, text=True, capture_output=True)
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(output.read_text())
-    assert len(report["cases"]) == 10
+    assert len(report["cases"]) == 12
     assert all(case["expected_behavior"] for case in report["cases"])
     cases = json.loads(demo.with_name("cases.json").read_text())
     cases[0]["before"] = cases[0]["after"]

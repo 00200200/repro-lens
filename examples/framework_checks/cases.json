@@ -39,6 +39,19 @@
     ]
   },
   {
+    "id": "numpy-global-shuffle",
+    "name": "NumPy global shuffle",
+    "framework": "NumPy",
+    "question": "Shuffle indices from a seeded generator instead of unseeded global state.",
+    "explanation": "np.random.shuffle draws from NumPy's global RNG, and nothing in this file seeds it. A Generator created with the experiment's seed keeps the policy local and visible. Seeding may also happen in another module; this is a review item, not a defect finding.",
+    "before": "import numpy as np\nindices = np.arange(len(X))\nnp.random.shuffle(indices)\n",
+    "after": "import numpy as np\nrng = np.random.default_rng(seed)\nindices = np.arange(len(X))\nrng.shuffle(indices)\n",
+    "expected": [
+      "R111",
+      "review"
+    ]
+  },
+  {
     "name": "XGBoost linear updater",
     "before": "import xgboost as xgb\nxgb.XGBRegressor(booster='gblinear', random_state=seed)\n",
     "after": "import xgboost as xgb\nxgb.XGBRegressor(booster='gblinear', updater='coord_descent', random_state=seed)\n",
@@ -63,6 +76,19 @@
     "framework": "LightGBM",
     "question": "Make CPU histogram construction explicit.",
     "explanation": "For the covered CPU configuration, deterministic mode also needs an explicit histogram choice. Select row-wise or column-wise construction for your workload; the example uses column-wise."
+  },
+  {
+    "id": "pytorch-global-init",
+    "name": "PyTorch weight initialization",
+    "framework": "PyTorch",
+    "question": "Make random weight initialization repeatable.",
+    "explanation": "torch.randn draws from PyTorch's global RNG, which this file never seeds. torch.manual_seed with the experiment's seed makes the initialization repeatable on one device; cuDNN kernels and data loading still need their own review.",
+    "before": "import torch\nweights = torch.randn(64, 32)\n",
+    "after": "import torch\ntorch.manual_seed(seed)\nweights = torch.randn(64, 32)\n",
+    "expected": [
+      "R113",
+      "review"
+    ]
   },
   {
     "name": "PyTorch shuffled data",
