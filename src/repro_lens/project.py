@@ -222,7 +222,8 @@ def check(root: Path, selected: list[str] | None = None) -> dict:
             "Explicit seed expressions are accepted but their runtime values are not proven.",
             "Notebook code cells are read in file order; IPython magics and shell lines are "
             "skipped, and execution order and outputs are not analyzed.",
-            "Global RNG state, training execution and data leakage are not analyzed.",
+            "Global RNG seeding is recognized only within the same file; training execution "
+            "and data leakage are not analyzed.",
             "Framework checks cover only the APIs and conditions listed in docs/frameworks.md.",
         ],
     }
