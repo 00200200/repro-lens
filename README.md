@@ -36,7 +36,7 @@ outputs before and after a change. Built for ML developers and coding agents.
 
 The static checker needs **Python 3.11+**, with **no ML dependencies or API key**.
 Replay runs your configured experiment and needs its dependencies.
-Use the CLI, an opt-in [pre-commit hook](#pre-commit), or the
+Use the CLI, an opt-in [pre-commit hook](#pre-commit), [GitHub Actions](#github-actions), or the
 [reproducibility skill](skills/reproducibility/SKILL.md) in your coding agent.
 
 ## Try the before/after demo
@@ -170,6 +170,49 @@ repos:
 ```
 
 Then run `pre-commit install` and `pre-commit run --all-files`. The hook screens code and project policy; experiment replay stays an explicit command. Run a full scan and replay in CI as well.
+
+## GitHub Actions
+
+Findings appear as annotations on the changed lines of a pull request:
+
+```yaml
+jobs:
+  repro-lens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: 00200200/repro-lens@main  # pin a release tag or commit SHA once one includes the action
+        with:
+          root: .            # project directory inside the checkout
+          fail-on: warning   # or `error` to keep warnings advisory
+```
+
+The action uses the runner's Python 3.11+ when there is one, or a uv-managed Python
+otherwise; it installs no packages into your environment. Review items appear as notices
+and never fail the step. Notebook findings are attached to the notebook file, with the
+cell and line in the message. GitHub limits how many annotations a step can show; the
+step log always lists every finding.
+
+To keep results in the repository's code scanning alerts, write SARIF and upload it:
+
+```yaml
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: 00200200/repro-lens@main
+        with:
+          sarif-file: repro-lens.sarif
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: repro-lens.sarif
+```
+
+Outside Actions, `repro-lens check --format sarif` and `--format github` produce the same
+output. Paths are relative to the current directory when `--root` is inside it, so run
+the command from the repository root.
 
 ## Coding agents
 
