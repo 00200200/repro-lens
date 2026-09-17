@@ -75,9 +75,10 @@ use recorded SHA-256 hashes. All four before/after run pairs are compared. Toler
 is not transitive, so checking only the first run on each side could miss a difference.
 
 Each report is limited to 8,000,000 bytes. Duplicate keys, nonfinite JSON numbers,
-missing output evidence and run values that contradict `matched` status are errors.
-The tool does not authenticate reports, attest the environment, or rehash original
-artifacts. It cannot detect unrecorded state or prove scientific validity.
+values that underflow to zero, missing output evidence and run values that contradict
+`matched` status are errors. The tool does not authenticate reports, attest the
+environment, or rehash original artifacts. It cannot detect unrecorded state or
+prove scientific validity.
 
 For example, if both baseline runs score 0.90 and both changed runs score 0.85,
 each `verify` can return `matched`. With unchanged zero tolerances, `compare` returns
