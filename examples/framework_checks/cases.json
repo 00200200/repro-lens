@@ -130,6 +130,19 @@
     "explanation": "A missing generator needs review because RNG state may be managed elsewhere. The example makes generator ownership explicit; worker initialization and dataset behavior still need attention."
   },
   {
+    "id": "pytorch-unseeded-generator",
+    "name": "PyTorch unseeded generator",
+    "framework": "PyTorch",
+    "question": "Does passing torch.Generator() seed the shuffle?",
+    "explanation": "DataLoader accepts a generator object, but the constructor draws OS entropy until manual_seed is given a value. Chain manual_seed with the experiment's seed. A generator variable is still accepted without proving that it was seeded.",
+    "before": "import torch\nfrom torch.utils.data import DataLoader\nDataLoader(dataset, shuffle=True, generator=torch.Generator())\n",
+    "after": "import torch\nfrom torch.utils.data import DataLoader\nDataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed(seed))\n",
+    "expected": [
+      "R106",
+      "review"
+    ]
+  },
+  {
     "name": "PyTorch cuDNN benchmark",
     "before": "import torch\ntorch.backends.cudnn.benchmark = True\n",
     "after": "import torch\ntorch.backends.cudnn.benchmark = False\n",

@@ -110,8 +110,29 @@ def test_lightgbm_cpu_device_and_histogram_policy(source, expected):
         ("DataLoader(dataset, shuffle=True)", [("R106", "review")]),
         ("DataLoader(dataset, 32, True)", [("R106", "review")]),
         ("DataLoader(dataset, shuffle=True, generator=None)", [("R106", "review")]),
+        ("DataLoader(dataset, shuffle=True, generator=torch.Generator())", [("R106", "review")]),
+        (
+            "DataLoader(dataset, shuffle=True, generator=torch.Generator(device='cpu'))",
+            [("R106", "review")],
+        ),
+        (
+            "DataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed(None))",
+            [("R106", "review")],
+        ),
+        (
+            "DataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed())",
+            [("R106", "review")],
+        ),
+        (
+            "from torch import Generator\nDataLoader(dataset, shuffle=True, generator=Generator())",
+            [("R106", "review")],
+        ),
         ("DataLoader(dataset, shuffle=True, generator=rng)", []),
         ("DataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed(seed))", []),
+        (
+            "DataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed(*args))",
+            [],
+        ),
         ("DataLoader(dataset, shuffle=False)", []),
         ("DataLoader(dataset)", []),
         ("DataLoader(dataset, shuffle=None)", []),
@@ -128,6 +149,7 @@ def test_lightgbm_cpu_device_and_histogram_policy(source, expected):
         ),
         ("random_split(dataset, [8, 2])", [("R106", "review")]),
         ("random_split(dataset, [8, 2], rng)", []),
+        ("random_split(dataset, [8, 2], torch.Generator())", [("R106", "review")]),
         ("random_split(dataset, [8, 2], None)", [("R106", "review")]),
         ("random_split(dataset, lengths=[8, 2], generator=rng)", []),
         ("random_split(*args, generator=rng)", []),
@@ -356,7 +378,7 @@ def test_framework_demo_checks_expected_results_and_detects_a_lost_warning(tmp_p
     result = subprocess.run(command, text=True, capture_output=True)
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(output.read_text())
-    assert len(report["cases"]) == 14
+    assert len(report["cases"]) == 15
     assert all(case["expected_behavior"] for case in report["cases"])
     cases = json.loads(demo.with_name("cases.json").read_text())
     cases[0]["before"] = cases[0]["after"]

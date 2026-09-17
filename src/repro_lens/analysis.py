@@ -294,7 +294,7 @@ class Scanner(ast.NodeVisitor):
 
     def visit_Call(self, node):
         name = self.qualified(node.func)
-        frameworks.check_call(node, name, self.emit, self.parameters.resolve)
+        frameworks.check_call(node, name, self.emit, self.parameters.resolve, self.qualified)
         self.seeded |= frameworks.libraries_seeded(node, name)
         if library := frameworks.global_consumer(node, name):
             self.global_uses.append((node, name, library))

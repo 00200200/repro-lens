@@ -7,7 +7,7 @@
 | R103 | warning | A new Python Random instance lacks an explicit seed |
 | R104 | warning | XGBoost gblinear selects the nondeterministic shotgun updater |
 | R105 | review | LightGBM determinism, device or histogram settings need review |
-| R106 | review | PyTorch data sampling has no explicit generator; global control is unresolved |
+| R106 | review | PyTorch data sampling has no explicit seeded generator; global control is unresolved |
 | R107 | warning | PyTorch cuDNN benchmarking is explicitly enabled |
 | R108 | warning | TensorFlow explicitly initializes a nondeterministic RNG |
 | R109 | review | Lightning Trainer does not request strict determinism without benchmarking |
