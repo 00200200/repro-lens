@@ -80,8 +80,12 @@ expressions are accepted, but their runtime values are not evaluated.
 Imports/aliases and common shadowing are tracked conservatively. Function-local names
 come from [Python's symbol tables](https://docs.python.org/3/library/symtable.html):
 parameters or assignments in a nested function, class, lambda or comprehension do not
-hide an import used by the enclosing function. Actual function locals shadow outer
-imports even before assignment. Invalid scope declarations are reported as S902.
+hide an import used by the enclosing function. Class attributes also do not hide an
+import used by a method, lambda, or comprehension expression in that class; those
+names resolve in the enclosing function or module. Method defaults and a
+comprehension's first iterator still use the class body. Actual function locals
+shadow outer imports even before assignment. Invalid scope declarations are
+reported as S902.
 
 Lambda default arguments are checked in the enclosing scope, following
 [Python's default argument semantics](https://docs.python.org/3/tutorial/controlflow.html#default-argument-values).
