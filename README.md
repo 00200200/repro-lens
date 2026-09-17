@@ -69,9 +69,10 @@ All four variants reproduce their own outputs. The changed threshold still disag
 
 The [demo](examples/agent_review/) uses a tiny synthetic classifier and scripted edits. It runs without ML dependencies or an API key and retains the actual reports. To check a real coding agent's work, use the [agent workflow](docs/agent-review.md).
 
-For actual model training, try the [XGBoost CPU replay example](examples/xgboost_review/):
-it installs its own locked dependencies and checks whether a refactor or a tree-depth
-change preserves predictions on a small synthetic fixture.
+For actual model training, try the [scikit-learn CPU replay](examples/sklearn_review/)
+or the [XGBoost CPU replay](examples/xgboost_review/): each installs its own locked
+dependencies and checks whether a refactor or a shallower tree preserves predictions
+on a small synthetic fixture.
 
 ## Install
 
