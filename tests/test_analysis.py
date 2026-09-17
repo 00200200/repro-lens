@@ -221,6 +221,79 @@ def test_nested_scope_does_not_shadow_enclosing_import(nested, seed):
 
 
 @pytest.mark.parametrize(
+    "body",
+    [
+        "np = custom\n    def train(self):\n        return np.random.default_rng()",
+        "np = np\n    def train(self):\n        return np.random.default_rng()",
+        "def train(self):\n        return np.random.default_rng()\n    np = custom",
+        (
+            "np = custom\n    class Inner:\n        def train(self):\n"
+            "            return np.random.default_rng()"
+        ),
+        "np = custom\n    train = lambda self: np.random.default_rng()",
+        "np = custom\n    values = [np.random.default_rng() for i in items]",
+        (
+            "np = custom\n    def train(self, rng=np.random.default_rng()):\n"
+            "        return np.random.default_rng()"
+        ),
+    ],
+    ids=[
+        "attribute",
+        "alias",
+        "attribute-after-method",
+        "nested-class",
+        "lambda",
+        "comprehension",
+        "method-default-and-body",
+    ],
+)
+def test_class_body_names_do_not_hide_imports_in_methods(body):
+    source = "import numpy as np\nclass Model:\n    " + body + "\n"
+    active, _ = analyze(source, "train.py")
+    assert [item.code for item in active] == ["R102"]
+    assert all("default_rng" in item.message for item in active)
+
+
+def test_class_body_still_uses_its_own_bindings():
+    assert (
+        codes("""
+    import numpy as np
+    class Model:
+        np = custom
+        value = np.random.default_rng()
+        values = [i for i in np.random.default_rng()]
+        def train(self, rng=np.random.default_rng()):
+            return rng
+    """)
+        == []
+    )
+
+
+def test_method_closes_over_enclosing_function_not_class_attribute():
+    assert (
+        codes("""
+    import numpy as np
+    def factory():
+        np = custom
+        class Model:
+            def train(self):
+                return np.random.default_rng()
+    """)
+        == []
+    )
+
+
+def test_class_attribute_reexport_does_not_hide_method_sklearn_call():
+    assert codes("""
+    from sklearn.ensemble import RandomForestClassifier
+    class Experiment:
+        RandomForestClassifier = RandomForestClassifier
+        def train(self):
+            return RandomForestClassifier()
+    """) == ["R101"]
+
+
+@pytest.mark.parametrize(
     "binding",
     [
         "import custom as np",
