@@ -2,7 +2,9 @@
 
 For checking an edit against an earlier experiment, retain reports from both revisions
 and use [before-and-after comparison](agent-review.md). Two runs of the current revision
-alone do not establish agreement with the earlier output.
+alone do not establish agreement with the earlier output. The
+[scikit-learn](../examples/sklearn_review/) and [XGBoost](../examples/xgboost_review/)
+CPU examples run this comparison on actual local fits.
 
 ```toml
 [tool.repro-lens.verify]

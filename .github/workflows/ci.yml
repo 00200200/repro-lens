@@ -46,6 +46,24 @@ jobs:
             .repro-lens/agent-demo/
             .repro-lens/framework-demo.json
           include-hidden-files: true
+  sklearn-replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          python-version: '3.11'
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run python examples/sklearn_review/demo.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: sklearn-replay-evidence
+          path: |
+            .repro-lens/sklearn-demo/
+            !.repro-lens/sklearn-demo/**/.venv/**
+          include-hidden-files: true
   xgboost-replay:
     runs-on: ubuntu-latest
     steps:
@@ -83,7 +101,7 @@ jobs:
           path: dist/gallery
   deploy-gallery:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [test, xgboost-replay, gallery]
+    needs: [test, sklearn-replay, xgboost-replay, gallery]
     runs-on: ubuntu-latest
     permissions:
       pages: write
