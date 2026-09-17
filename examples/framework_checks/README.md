@@ -9,7 +9,7 @@ From the repository root, with Python 3.11+ and uv:
 uv run --no-dev python examples/framework_checks/demo.py
 ```
 
-The demo scans 26 small source strings in [cases.json](cases.json), covering thirteen
+The demo scans 28 small source strings in [cases.json](cases.json), covering fourteen
 checks across Python, NumPy, scikit-learn, XGBoost, LightGBM, PyTorch, TensorFlow
 and Lightning. It asserts the
 expected rule and severity for each initial example and no finding for its revised

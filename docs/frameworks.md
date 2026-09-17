@@ -145,6 +145,17 @@ Helpers that seed several libraries count for each of them: `seed_everything` fr
 (Python, NumPy, TensorFlow). `torch.cuda.manual_seed_all` alone does not seed the
 CPU generator and is not counted.
 
+A seeding call counts only when it has an explicit non-None argument
+(`np.random.seed(seed)`, `random.seed(seed)`, `torch.manual_seed(seed)`,
+`seed_everything(seed)`). `seed()` and `seed(None)` draw OS or clock entropy — the
+same as omitting the call — so a later global draw in that file is still a review
+item. [`numpy.random.seed`](https://numpy.org/doc/stable/reference/random/legacy.html)
+and [`random.seed`](https://docs.python.org/3/library/random.html#random.seed)
+document that omitted/`None` seeds are not a fixed experiment seed; Lightning's
+`seed_everything(None)` can also read `PL_GLOBAL_SEED` or generate a random seed.
+An expression such as `seed(config.seed)` is accepted without evaluating it. `**`
+expansions of a seeder stay silent, since they may carry that argument.
+
 A PyTorch call with an explicit non-None `generator=` and a TensorFlow op with an
 explicit non-None `seed=` do not use the global state and are not reported: TensorFlow
 documents that an operation seed alone yields a repeatable sequence. Calls with `**`
