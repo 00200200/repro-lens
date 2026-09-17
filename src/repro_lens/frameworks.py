@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 RULES = {
     "R104": "XGBoost's gblinear booster selects the nondeterministic shotgun updater.",
     "R105": "LightGBM's deterministic configuration needs review.",
-    "R106": "PyTorch data sampling has no explicit generator; review global RNG control.",
+    "R106": "PyTorch data sampling has no explicit seeded generator; review global RNG control.",
     "R107": "PyTorch cuDNN benchmarking is explicitly enabled.",
     "R108": "A TensorFlow generator is initialized from nondeterministic state.",
     "R109": "Lightning Trainer's deterministic configuration needs review.",
@@ -352,7 +352,22 @@ def check_lightgbm(node, name, options, emit):
             )
 
 
-def check_data(node, name, emit, resolve):
+def unseeded_torch_generator(node, qualified):
+    """True for torch.Generator() or Generator().manual_seed() / manual_seed(None)."""
+    if qualified is None or not isinstance(node, ast.Call):
+        return False
+    if isinstance(node.func, ast.Attribute) and node.func.attr == "manual_seed":
+        ctor = node.func.value
+        if not (isinstance(ctor, ast.Call) and qualified(ctor.func) == "torch.Generator"):
+            return False
+        seed = Arguments.call(node, ("seed",)).get("seed")
+        if seed is UNKNOWN:
+            return False  # *args / **kwargs may carry a seed
+        return seed is MISSING or constant(seed) is None
+    return qualified(node.func) == "torch.Generator"
+
+
+def check_data(node, name, emit, resolve, qualified=None):
     positions = (
         ("dataset", "lengths", "generator")
         if name in SPLITS
@@ -383,13 +398,18 @@ def check_data(node, name, emit, resolve):
     generator = options.get("generator")
     if generator is UNKNOWN:
         unresolved(node, name, emit)
-    elif generator is MISSING or constant(generator) is None:
+    elif (
+        generator is MISSING
+        or constant(generator) is None
+        or unseeded_torch_generator(generator, qualified)
+    ):
         emit(
             node,
             "R106",
-            f"{name} samples data without an explicit generator.",
-            "Pass the experiment's seeded torch.Generator or review global torch RNG control. "
-            "For DataLoader, also review random transforms and worker initialization.",
+            f"{name} samples data without an explicit seeded generator.",
+            "Pass torch.Generator().manual_seed with the experiment's seed, or review global "
+            "torch RNG control. For DataLoader, also review random transforms and worker "
+            "initialization.",
             "review",
         )
 
@@ -428,7 +448,7 @@ def check_algorithms(node, name, emit, resolve):
         )
 
 
-def check_call(node, name, emit, resolve=None):
+def check_call(node, name, emit, resolve=None, qualified=None):
     if name in XGBOOST or name in {
         "xgboost.train",
         "xgboost.cv",
@@ -450,7 +470,7 @@ def check_call(node, name, emit, resolve=None):
             options = Arguments.mapping(options.get("params"), resolve)
         check_lightgbm(node, name, options, emit)
     elif name in LOADERS or name in SPLITS:
-        check_data(node, name, emit, resolve)
+        check_data(node, name, emit, resolve, qualified)
     elif name in TF_NONDETERMINISTIC:
         emit(
             node,

@@ -6,6 +6,7 @@
 - Add a composite GitHub Action that annotates pull requests, optionally writes SARIF for code scanning, and fails according to `fail-on`.
 - State in the report limitations that global RNG seeding is recognized only within the same file.
 - Review global RNG use when a seeder is called without an explicit non-None seed (`seed()`, `seed(None)`, `seed_everything()`).
+- Treat `torch.Generator()` and `Generator().manual_seed(None)` as unseeded for shuffled DataLoader / random_split sampling (R106).
 
 ## 0.3.1 — 2026-09-14
 
