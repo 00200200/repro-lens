@@ -234,14 +234,25 @@ def test_framework_aliases_shadowing_and_justified_suppression(module, call, cod
         ("import numpy as np\nnp.random.shuffle(x)", ["R111"]),
         ("import numpy as np\nnp.random.seed(seed)\nnp.random.shuffle(x)", []),
         ("import numpy as np\nnp.random.shuffle(x)\nnp.random.seed(seed)", []),
+        ("import numpy as np\nnp.random.seed()\nnp.random.shuffle(x)", ["R111"]),
+        ("import numpy as np\nnp.random.seed(None)\nnp.random.shuffle(x)", ["R111"]),
+        ("import numpy as np\nnp.random.seed(seed=None)\nnp.random.shuffle(x)", ["R111"]),
+        ("import numpy as np\nnp.random.seed(0)\nnp.random.shuffle(x)", []),
+        ("import numpy as np\nnp.random.seed(*args)\nnp.random.shuffle(x)", []),
+        ("from numpy.random import seed, shuffle\nseed()\nshuffle(x)", ["R111"]),
         ("from numpy.random import randint\nrandint(3)", ["R111"]),
         ("from numpy.random import seed, randint\nseed(0)\nrandint(3)", []),
         ("import numpy as np\nrng = np.random.default_rng(seed)\nrng.shuffle(x)", []),
         ("import random\nrandom.shuffle(x)", ["R112"]),
         ("import random\nrandom.seed(seed)\nrandom.shuffle(x)", []),
+        ("import random\nrandom.seed()\nrandom.shuffle(x)", ["R112"]),
+        ("import random\nrandom.seed(None)\nrandom.shuffle(x)", ["R112"]),
+        ("import random\nrandom.seed(a=None)\nrandom.shuffle(x)", ["R112"]),
         ("import random\nrandom.Random(seed).shuffle(x)", []),
         ("import torch\ntorch.randn(3)", ["R113"]),
         ("import torch\ntorch.manual_seed(seed)\ntorch.randn(3)", []),
+        ("import torch\ntorch.manual_seed()\ntorch.randn(3)", ["R113"]),
+        ("import torch\ntorch.manual_seed(None)\ntorch.randn(3)", ["R113"]),
         ("import torch\ntorch.cuda.manual_seed_all(seed)\ntorch.randn(3)", ["R113"]),
         ("import torch\ntorch.randn(3, generator=g)", []),
         ("import torch\ntorch.randn(3, generator=None)", ["R113"]),
@@ -257,6 +268,16 @@ def test_framework_aliases_shadowing_and_justified_suppression(module, call, cod
             "import numpy as np\nimport torch\nfrom lightning import seed_everything\n"
             "seed_everything(seed)\nnp.random.rand()\ntorch.rand(2)",
             [],
+        ),
+        (
+            "import numpy as np\nfrom lightning import seed_everything\n"
+            "seed_everything()\nnp.random.rand()",
+            ["R111"],
+        ),
+        (
+            "import numpy as np\nfrom lightning import seed_everything\n"
+            "seed_everything(None)\nnp.random.rand()",
+            ["R111"],
         ),
         (
             "import numpy as np\nimport torch\nfrom transformers import set_seed\n"
@@ -335,7 +356,7 @@ def test_framework_demo_checks_expected_results_and_detects_a_lost_warning(tmp_p
     result = subprocess.run(command, text=True, capture_output=True)
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(output.read_text())
-    assert len(report["cases"]) == 13
+    assert len(report["cases"]) == 14
     assert all(case["expected_behavior"] for case in report["cases"])
     cases = json.loads(demo.with_name("cases.json").read_text())
     cases[0]["before"] = cases[0]["after"]

@@ -52,6 +52,19 @@
     ]
   },
   {
+    "id": "numpy-empty-seed",
+    "name": "NumPy seed without a value",
+    "framework": "NumPy",
+    "question": "Does seed() without a value pin the global RNG?",
+    "explanation": "np.random.seed() and seed(None) draw OS or clock entropy, so they do not make a later shuffle repeatable. Pass the experiment's seed, or switch to a Generator created with that seed.",
+    "before": "import numpy as np\nnp.random.seed()\nindices = np.arange(len(X))\nnp.random.shuffle(indices)\n",
+    "after": "import numpy as np\nnp.random.seed(seed)\nindices = np.arange(len(X))\nnp.random.shuffle(indices)\n",
+    "expected": [
+      "R111",
+      "review"
+    ]
+  },
+  {
     "id": "python-global-shuffle",
     "name": "Python global shuffle",
     "framework": "Python",

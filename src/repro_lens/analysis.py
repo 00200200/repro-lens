@@ -295,7 +295,7 @@ class Scanner(ast.NodeVisitor):
     def visit_Call(self, node):
         name = self.qualified(node.func)
         frameworks.check_call(node, name, self.emit, self.parameters.resolve)
-        self.seeded |= frameworks.SEEDERS.get(name, set())
+        self.seeded |= frameworks.libraries_seeded(node, name)
         if library := frameworks.global_consumer(node, name):
             self.global_uses.append((node, name, library))
         kwargs = {kw.arg: kw.value for kw in node.keywords if kw.arg}

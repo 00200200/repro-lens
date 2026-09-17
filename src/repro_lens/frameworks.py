@@ -222,6 +222,27 @@ SEEDERS = {
     **CROSS_SEEDERS,
 }
 CONSUMERS = {name: library for library, spec in GLOBAL_RNG.items() for name in spec["consumers"]}
+# First argument that actually pins entropy. seed()/seed(None) draw OS or clock entropy.
+SEEDER_PARAMS = {
+    **dict.fromkeys(SEEDERS, "seed"),
+    "numpy.random.set_state": "state",
+    "random.seed": "a",
+    "random.setstate": "state",
+    "torch.set_rng_state": "new_state",
+    "torch.random.set_rng_state": "new_state",
+}
+
+
+def libraries_seeded(node, name):
+    """Libraries this call seeds with an explicit non-None argument; otherwise none."""
+    libraries = SEEDERS.get(name)
+    if not libraries:
+        return set()
+    parameter = SEEDER_PARAMS[name]
+    value = Arguments.call(node, (parameter,)).get(parameter)
+    if value is MISSING or constant(value) is None:
+        return set()
+    return libraries
 
 
 def global_consumer(node, name):
