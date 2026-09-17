@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from decimal import Decimal
 
 
 def same_json(first: object, second: object) -> bool:
@@ -24,6 +25,9 @@ def loads(text: str, source: object) -> object:
         number = float(value)
         if not math.isfinite(number):
             reject_constant(value)
+        # float() also turns underflowing literals such as 1e-400 into 0.0.
+        if number == 0.0 and Decimal(value) != 0:
+            raise ValueError(f"Underflowing JSON number {value} in {source}")
         return number
 
     def unique_object(pairs):

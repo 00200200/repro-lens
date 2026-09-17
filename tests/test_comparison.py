@@ -225,11 +225,22 @@ def test_run_evidence_must_support_the_claimed_match(tmp_path, field, value):
         read_report(save(tmp_path / "bad.json", report))
 
 
-@pytest.mark.parametrize("text", ['{"x":1,"x":2}', '{"x":NaN}', '{"x":1e999}', "[]", "broken"])
-def test_reports_use_strict_json(tmp_path, text):
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        ('{"x":1,"x":2}', "Duplicate"),
+        ('{"x":NaN}', "Nonfinite"),
+        ('{"x":1e999}', "Nonfinite"),
+        ('{"x":1e-400}', "Underflowing"),
+        ('{"x":-1e-400}', "Underflowing"),
+        ("[]", "Expected a verification report object"),
+        ("broken", "Expecting"),
+    ],
+)
+def test_reports_use_strict_json(tmp_path, text, message):
     path = tmp_path / "bad.json"
     path.write_text(text)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         read_report(path)
 
 
