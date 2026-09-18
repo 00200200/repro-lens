@@ -59,26 +59,31 @@ See [LightGBM's determinism guidance](https://lightgbm.readthedocs.io/en/stable/
 
 ```python
 import torch
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, RandomSampler, random_split
 
 random_split(dataset, lengths)  # R106 review: global RNG may be controlled elsewhere.
 random_split(dataset, lengths, generator=torch.Generator().manual_seed(experiment_seed))
 DataLoader(dataset, shuffle=True, generator=torch.Generator())  # R106: constructor is unseeded.
 DataLoader(dataset, shuffle=True, generator=seeded_generator)
+DataLoader(dataset, sampler=RandomSampler(dataset))  # R106 at the sampler, not the loader.
+RandomSampler(dataset, generator=torch.Generator().manual_seed(experiment_seed))
 torch.backends.cudnn.benchmark = True  # R107 warning: algorithm-selection risk.
 torch.use_deterministic_algorithms(True, warn_only=True)  # R110 review.
 ```
 
-R106 checks `random_split` and explicitly shuffled `DataLoader` calls for a seeded
-generator, including positional arguments. The defining `dataset` and `dataloader`
-submodule imports are recognized too. `torch.Generator()` draws OS entropy until
-`manual_seed` is given a non-None argument, so `generator=torch.Generator()` and
+R106 checks `random_split`, explicitly shuffled `DataLoader` calls, and the stdlib
+`RandomSampler`, `WeightedRandomSampler` and `SubsetRandomSampler` constructors for a
+seeded generator, including positional arguments. The defining `dataset`, `dataloader`
+and `sampler` submodule imports are recognized too. `torch.Generator()` draws OS entropy
+until `manual_seed` is given a non-None argument, so `generator=torch.Generator()` and
 `generator=torch.Generator().manual_seed(None)` are review items — the same as
 omitting the generator. See the [Generator API](https://docs.pytorch.org/docs/2.8/generated/torch.Generator.html)
-(2.8 reference). A variable such as `generator=rng` is still accepted; its seed is
+and [Sampler signatures](https://docs.pytorch.org/docs/2.8/data.html) (2.8 reference).
+A variable such as `generator=rng` is still accepted; its seed is
 not proven. `manual_seed(*args)` stays silent, since the expansion may carry a seed.
-Global `torch.manual_seed`, transforms, custom samplers and worker callbacks are not
-followed.
+`SequentialSampler` is not random. Global `torch.manual_seed`, transforms, user-defined
+`Sampler` subclasses and worker callbacks are not followed. `DataLoader(..., sampler=x)`
+does not inspect `x`; the finding is on the sampler constructor.
 
 R107 checks direct/annotated `cudnn.benchmark = True` assignments. Dynamic values and
 later overrides are not traced. R110 reviews `use_deterministic_algorithms(False)` or

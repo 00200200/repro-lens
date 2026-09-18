@@ -130,6 +130,19 @@
     "explanation": "A missing generator needs review because RNG state may be managed elsewhere. The example makes generator ownership explicit; worker initialization and dataset behavior still need attention."
   },
   {
+    "id": "pytorch-random-sampler",
+    "name": "PyTorch random sampler",
+    "framework": "PyTorch",
+    "question": "Does a sampler need its own generator?",
+    "explanation": "DataLoader does not shuffle when a sampler is passed, so an unseeded RandomSampler is invisible to the shuffle check. The sampler draws from the global RNG until generator= is a seeded torch.Generator. SequentialSampler is not random and is not flagged.",
+    "before": "from torch.utils.data import DataLoader, RandomSampler\nDataLoader(dataset, sampler=RandomSampler(dataset))\n",
+    "after": "import torch\nfrom torch.utils.data import DataLoader, RandomSampler\nDataLoader(dataset, sampler=RandomSampler(dataset, generator=torch.Generator().manual_seed(seed)))\n",
+    "expected": [
+      "R106",
+      "review"
+    ]
+  },
+  {
     "id": "pytorch-unseeded-generator",
     "name": "PyTorch unseeded generator",
     "framework": "PyTorch",

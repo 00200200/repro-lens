@@ -165,6 +165,48 @@ def test_pytorch_sampling_does_not_claim_missing_global_control(source, expected
 @pytest.mark.parametrize(
     "source, expected",
     [
+        ("RandomSampler(dataset)", [("R106", "review")]),
+        ("RandomSampler(dataset, generator=None)", [("R106", "review")]),
+        ("RandomSampler(dataset, generator=torch.Generator())", [("R106", "review")]),
+        (
+            "RandomSampler(dataset, generator=torch.Generator().manual_seed(None))",
+            [("R106", "review")],
+        ),
+        ("RandomSampler(dataset, generator=torch.Generator().manual_seed())", [("R106", "review")]),
+        ("RandomSampler(dataset, generator=rng)", []),
+        ("RandomSampler(dataset, generator=torch.Generator().manual_seed(seed))", []),
+        ("RandomSampler(dataset, generator=torch.Generator().manual_seed(*args))", []),
+        ("RandomSampler(dataset, True, 8, rng)", []),
+        ("RandomSampler(dataset, **options)", [("R190", "review")]),
+        ("RandomSampler(*args)", [("R190", "review")]),
+        ("WeightedRandomSampler(weights, 8)", [("R106", "review")]),
+        ("WeightedRandomSampler(weights, num_samples=8, generator=rng)", []),
+        ("WeightedRandomSampler(weights, 8, True, torch.Generator())", [("R106", "review")]),
+        ("SubsetRandomSampler(indices)", [("R106", "review")]),
+        ("SubsetRandomSampler(indices, generator=rng)", []),
+        ("SubsetRandomSampler(indices, torch.Generator())", [("R106", "review")]),
+        ("SequentialSampler(dataset)", []),
+        (
+            "from torch.utils.data.sampler import RandomSampler as Sampler\nSampler(dataset)",
+            [("R106", "review")],
+        ),
+        ("DataLoader(dataset, sampler=RandomSampler(dataset))", [("R106", "review")]),
+        ("DataLoader(dataset, sampler=SequentialSampler(dataset))", []),
+        ("torch.manual_seed(17)\nRandomSampler(dataset)", [("R106", "review")]),
+    ],
+)
+def test_pytorch_random_samplers_need_a_seeded_generator(source, expected):
+    imports = (
+        "import torch\n"
+        "from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, "
+        "SubsetRandomSampler, WeightedRandomSampler\n"
+    )
+    assert findings(imports + source) == expected
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
         ("torch.backends.cudnn.benchmark = True", [("R107", "warning")]),
         ("torch.backends.cudnn.benchmark: bool = True", [("R107", "warning")]),
         ("torch.backends.cudnn.benchmark = False", []),
@@ -231,6 +273,9 @@ def test_lightning_namespaces_and_modes(namespace, arguments, expected):
         ("xgboost", "lib.XGBClassifier(booster='gblinear')", "R104"),
         ("lightgbm", "lib.LGBMClassifier()", "R105"),
         ("torch.utils.data", "lib.random_split(data, sizes)", "R106"),
+        ("torch.utils.data", "lib.RandomSampler(data)", "R106"),
+        ("torch.utils.data", "lib.WeightedRandomSampler(weights, 8)", "R106"),
+        ("torch.utils.data", "lib.SubsetRandomSampler(indices)", "R106"),
         ("torch", "lib.backends.cudnn.benchmark = True", "R107"),
         ("tensorflow", "lib.random.Generator.from_non_deterministic_state()", "R108"),
         ("lightning.pytorch", "lib.Trainer()", "R109"),
@@ -378,7 +423,7 @@ def test_framework_demo_checks_expected_results_and_detects_a_lost_warning(tmp_p
     result = subprocess.run(command, text=True, capture_output=True)
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(output.read_text())
-    assert len(report["cases"]) == 15
+    assert len(report["cases"]) == 16
     assert all(case["expected_behavior"] for case in report["cases"])
     cases = json.loads(demo.with_name("cases.json").read_text())
     cases[0]["before"] = cases[0]["after"]

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Review PyTorch `RandomSampler`, `WeightedRandomSampler` and `SubsetRandomSampler` constructors that omit a seeded generator (R106).
 - Reject JSON numbers that underflow to zero (for example `1e-400`) in experiment results and retained reports, so they cannot match a true `0.0`.
 - Add a scikit-learn CPU replay example that compares an equivalent feature-selection refactor with a shallower tree.
 - Report static check findings as SARIF 2.1.0 (`--format sarif`) or GitHub Actions annotations (`--format github`), with rule links and notebook cell locations in the message.

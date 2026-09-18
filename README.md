@@ -119,7 +119,7 @@ of these frameworks to scan their code.
 | scikit-learn | Explicit randomness control in supported splits, estimators and datasets |
 | XGBoost | `gblinear` with the nondeterministic `shotgun` updater, even with a seed |
 | LightGBM | CPU determinism, device choice and forced histogram configuration |
-| PyTorch | DataLoader/random_split generators, cuDNN benchmarking and deterministic mode |
+| PyTorch | DataLoader, random_split and random Sampler generators; cuDNN benchmarking and deterministic mode |
 | TensorFlow | Generators explicitly initialized from nondeterministic state |
 | Lightning | Trainer determinism, warning-only mode and benchmarking |
 | Global RNG state | NumPy, Python, PyTorch or TensorFlow global randomness used in a file that never seeds it (review) |
