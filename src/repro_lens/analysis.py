@@ -102,6 +102,18 @@ SKLEARN = {
     "sklearn.datasets.make_regression": "always",
     "sklearn.datasets.make_blobs": "always",
 }
+# BitGenerators with seed=None draw OS entropy, the same as default_rng().
+# Philox also accepts key=; that is handled at the call, not as a separate API kind.
+NUMPY_RNG = {
+    "numpy.random.default_rng",
+    "numpy.random.RandomState",
+    "numpy.random.mtrand.RandomState",
+    "numpy.random.PCG64",
+    "numpy.random.PCG64DXSM",
+    "numpy.random.MT19937",
+    "numpy.random.Philox",
+    "numpy.random.SFC64",
+}
 UNKNOWN = object()
 
 
@@ -379,11 +391,16 @@ class Scanner(ast.NodeVisitor):
                     )
             else:
                 self.check_seed(node, name, kwargs.get("random_state"), dynamic, "R101")
-        elif name in {"numpy.random.default_rng", "numpy.random.RandomState", "random.Random"}:
+        elif name in NUMPY_RNG or name == "random.Random":
             keyword = "x" if name == "random.Random" else "seed"
             seed = kwargs.get(keyword) or (node.args[0] if node.args else None)
             if isinstance(seed, ast.Starred):
                 seed = None
+            # Philox can be pinned with key= even when seed is omitted or None.
+            if name == "numpy.random.Philox" and (seed is None or literal(seed) is None):
+                key = kwargs.get("key")
+                if key is not None:
+                    seed = key
             code = "R103" if name == "random.Random" else "R102"
             self.check_seed(node, name, seed, dynamic, code)
         self.generic_visit(node)

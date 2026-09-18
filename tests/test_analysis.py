@@ -69,6 +69,40 @@ def test_randomness_conditions(source, expected):
     assert codes(source) == expected
 
 
+@pytest.mark.parametrize("name", ["PCG64", "PCG64DXSM", "MT19937", "SFC64", "Philox"])
+def test_unseeded_numpy_bit_generators(name):
+    imported = f"from numpy.random import {name}\n"
+    assert codes(imported + f"{name}()") == ["R102"]
+    assert codes(imported + f"{name}(None)") == ["R102"]
+    assert codes(imported + f"{name}(seed=None)") == ["R102"]
+    assert codes(imported + f"{name}(0)") == []
+    assert codes(imported + f"{name}(seed)") == []
+    assert codes(imported + f"{name}(**options)") == ["R190"]
+
+
+def test_pcg64_inside_generator_is_the_unseeded_call():
+    source = "from numpy.random import Generator, PCG64\nGenerator(PCG64())"
+    active, _ = analyze(source, "train.py")
+    column = source.splitlines()[1].index("PCG64()") + 1
+    assert [(item.code, item.column) for item in active] == [("R102", column)]
+    assert "numpy.random.PCG64" in active[0].message
+    assert codes("from numpy.random import Generator, PCG64\nGenerator(PCG64(seed))") == []
+
+
+def test_philox_key_pins_entropy_but_counter_does_not():
+    imported = "from numpy.random import Philox\n"
+    assert codes(imported + "Philox(key=1)") == []
+    assert codes(imported + "Philox(key=stream)") == []
+    assert codes(imported + "Philox(key=None)") == ["R102"]
+    assert codes(imported + "Philox(counter=1)") == ["R102"]
+    assert codes(imported + "Philox(seed=None, key=1)") == []
+
+
+def test_mtrand_random_state_is_the_legacy_constructor():
+    assert codes("from numpy.random.mtrand import RandomState\nRandomState()") == ["R102"]
+    assert codes("from numpy.random.mtrand import RandomState\nRandomState(0)") == []
+
+
 @pytest.mark.parametrize(
     "module, name",
     [
