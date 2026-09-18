@@ -1,11 +1,13 @@
 <p align="center">
-  <img src="assets/hero.svg" alt="Repro Lens — Same experiment. What changed? Check source, replay runs, compare outputs." width="1200">
+  <img src="assets/hero.svg" alt="Repro Lens — Same experiment. What changed? Check source, replay runs, compare outputs." width="100%">
 </p>
 
 <p align="center">
   <a href="https://github.com/00200200/repro-lens/actions/workflows/ci.yml"><img src="https://github.com/00200200/repro-lens/actions/workflows/ci.yml/badge.svg" alt="Checks"></a>
   <a href="https://github.com/00200200/repro-lens/releases/latest"><img src="https://img.shields.io/github/v/release/00200200/repro-lens?color=64dfcf" alt="Latest release"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.11%2B-9ebcff" alt="Python 3.11 or newer"></a>
+  <img src="https://img.shields.io/badge/static%20check-no%20ML%20deps-3fb950" alt="Static check needs no ML dependencies">
+  <img src="https://img.shields.io/badge/runs%20in-CLI%20·%20pre--commit%20·%20Actions%20·%20agents-8957e5" alt="CLI, pre-commit, GitHub Actions, and coding agents">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64dfcf" alt="MIT license"></a>
   <a href="https://github.com/00200200/repro-lens/stargazers"><img src="https://img.shields.io/github/stars/00200200/repro-lens?style=flat&amp;color=f7bb83" alt="GitHub stars"></a>
 </p>
@@ -27,6 +29,14 @@
 
 Catch reproducibility risks before a commit, replay an experiment, and compare
 outputs before and after a change. Built for ML developers and coding agents.
+
+```
+check  →  verify  →  compare
+```
+
+<p align="center">
+  <img src="assets/demo-verify.svg" alt="Agent-review demo: baseline and refactor match; a changed threshold mismatches; a changed tolerance is not comparable" width="760">
+</p>
 
 | Command | Question it answers | Evidence |
 | --- | --- | --- |
@@ -103,6 +113,10 @@ from sklearn.model_selection import train_test_split
 
 train_test_split(X, y)  # R101: no explicit random_state
 ```
+
+<p align="center">
+  <img src="assets/demo-check.svg" alt="repro-lens check reports R101 on train_test_split without random_state" width="760">
+</p>
 
 The checker recognizes imported aliases, skips non-shuffled splits, and reports dynamic arguments as unresolved. Warnings can be justified with an inline comment. All rules and their limits are described in [docs/rules.md](docs/rules.md).
 
