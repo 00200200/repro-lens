@@ -172,7 +172,8 @@ explicit non-None `seed=` do not use the global state and are not reported: Tens
 documents that an operation seed alone yields a repeatable sequence. Calls with `**`
 expansions stay silent, since the expansion may carry that argument. Generator objects
 (`np.random.default_rng(seed).shuffle`, `random.Random(seed).choice`) are method
-calls on a variable and are outside these rules; R102/R103 cover their construction.
+calls on a variable and are outside these rules; R102/R103 cover construction of
+`default_rng`/`RandomState`/BitGenerators and `random.Random`.
 
 Seeding is recognized anywhere in the file, even after the use or inside another
 function, and never across files: a project that seeds in `main.py` and draws in
