@@ -131,6 +131,15 @@ TF_NONDETERMINISTIC = {
 }
 LOADERS = {"torch.utils.data.DataLoader", "torch.utils.data.dataloader.DataLoader"}
 SPLITS = {"torch.utils.data.random_split", "torch.utils.data.dataset.random_split"}
+SAMPLERS = {
+    f"{module}.{name}": positions
+    for module in ("torch.utils.data", "torch.utils.data.sampler")
+    for name, positions in (
+        ("RandomSampler", ("data_source", "replacement", "num_samples", "generator")),
+        ("WeightedRandomSampler", ("weights", "num_samples", "replacement", "generator")),
+        ("SubsetRandomSampler", ("indices", "generator")),
+    )
+}
 
 
 # Global RNG state. Each library's seeder list follows its primary documentation:
@@ -367,6 +376,26 @@ def unseeded_torch_generator(node, qualified):
     return qualified(node.func) == "torch.Generator"
 
 
+def check_generator(node, name, options, emit, qualified=None):
+    generator = options.get("generator")
+    if generator is UNKNOWN:
+        unresolved(node, name, emit)
+    elif (
+        generator is MISSING
+        or constant(generator) is None
+        or unseeded_torch_generator(generator, qualified)
+    ):
+        emit(
+            node,
+            "R106",
+            f"{name} samples data without an explicit seeded generator.",
+            "Pass torch.Generator().manual_seed with the experiment's seed, or review global "
+            "torch RNG control. Also review random transforms and DataLoader worker "
+            "initialization.",
+            "review",
+        )
+
+
 def check_data(node, name, emit, resolve, qualified=None):
     positions = (
         ("dataset", "lengths", "generator")
@@ -395,23 +424,7 @@ def check_data(node, name, emit, resolve, qualified=None):
         if shuffle is not True:
             unresolved(node, name, emit)
             return
-    generator = options.get("generator")
-    if generator is UNKNOWN:
-        unresolved(node, name, emit)
-    elif (
-        generator is MISSING
-        or constant(generator) is None
-        or unseeded_torch_generator(generator, qualified)
-    ):
-        emit(
-            node,
-            "R106",
-            f"{name} samples data without an explicit seeded generator.",
-            "Pass torch.Generator().manual_seed with the experiment's seed, or review global "
-            "torch RNG control. For DataLoader, also review random transforms and worker "
-            "initialization.",
-            "review",
-        )
+    check_generator(node, name, options, emit, qualified)
 
 
 def check_trainer(node, name, emit, resolve):
@@ -471,6 +484,8 @@ def check_call(node, name, emit, resolve=None, qualified=None):
         check_lightgbm(node, name, options, emit)
     elif name in LOADERS or name in SPLITS:
         check_data(node, name, emit, resolve, qualified)
+    elif name in SAMPLERS:
+        check_generator(node, name, Arguments.call(node, SAMPLERS[name], resolve), emit, qualified)
     elif name in TF_NONDETERMINISTIC:
         emit(
             node,
