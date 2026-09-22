@@ -7,7 +7,7 @@
 | R103 | warning | A new Python Random instance lacks an explicit seed |
 | R104 | warning | XGBoost gblinear selects the nondeterministic shotgun updater |
 | R105 | review | LightGBM determinism, device or histogram settings need review |
-| R106 | review | PyTorch data sampling has no explicit generator; global control is unresolved |
+| R106 | review | PyTorch data sampling has no explicit seeded generator; global control is unresolved |
 | R107 | warning | PyTorch cuDNN benchmarking is explicitly enabled |
 | R108 | warning | TensorFlow explicitly initializes a nondeterministic RNG |
 | R109 | review | Lightning Trainer does not request strict determinism without benchmarking |
@@ -26,6 +26,12 @@
 
 `--fail-on warning` is the default. Review items never fail the hook; choose
 `--fail-on error` when warnings should remain advisory.
+
+`--format sarif` writes SARIF 2.1.0 with one rule entry per code above; errors, warnings
+and review items become SARIF `error`, `warning` and `note` results. `--format github`
+prints GitHub Actions `::error`, `::warning` and `::notice` commands. In both formats a
+notebook finding points at the notebook file, because a cell line has no line in the
+`.ipynb` JSON; the cell and line are the start of the message.
 
 See [framework coverage](frameworks.md) for R104–R115: exact APIs, primary sources,
 passing examples and limits. These rules share the CLI, hook and skill engine.
@@ -61,6 +67,16 @@ HistGradientBoosting binning or early stopping, SpectralClustering, and AdaBoost
 a custom estimator. This registry does not model every library version or every
 estimator's parameter conditions.
 
+R102 covers `numpy.random.default_rng`, `RandomState` (including
+`numpy.random.mtrand.RandomState`) and the public BitGenerator constructors
+`PCG64`, `PCG64DXSM`, `MT19937`, `Philox` and `SFC64`. NumPy's
+[Generator guide](https://numpy.org/doc/stable/reference/random/generator.html)
+constructs `Generator(PCG64())`; with `seed=None` those constructors draw OS
+entropy, the same as `default_rng()`. The finding is on the BitGenerator call.
+`Philox(key=...)` counts as entropy control; `counter=` alone does not (see
+[Philox](https://numpy.org/doc/stable/reference/random/bit_generators/philox.html)).
+`numpy.random.Generator(...)` itself is not flagged: it requires a BitGenerator.
+
 RNG findings are screening warnings: omitted random_state can be deliberate with
 controlled upstream global RNG state. The checker does not infer that state. Pass an
 explicit seed/RNG or justify the actual policy on the call's first line:
@@ -75,8 +91,12 @@ expressions are accepted, but their runtime values are not evaluated.
 Imports/aliases and common shadowing are tracked conservatively. Function-local names
 come from [Python's symbol tables](https://docs.python.org/3/library/symtable.html):
 parameters or assignments in a nested function, class, lambda or comprehension do not
-hide an import used by the enclosing function. Actual function locals shadow outer
-imports even before assignment. Invalid scope declarations are reported as S902.
+hide an import used by the enclosing function. Class attributes also do not hide an
+import used by a method, lambda, or comprehension expression in that class; those
+names resolve in the enclosing function or module. Method defaults and a
+comprehension's first iterator still use the class body. Actual function locals
+shadow outer imports even before assignment. Invalid scope declarations are
+reported as S902.
 
 Lambda default arguments are checked in the enclosing scope, following
 [Python's default argument semantics](https://docs.python.org/3/tutorial/controlflow.html#default-argument-values).

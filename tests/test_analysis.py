@@ -69,6 +69,40 @@ def test_randomness_conditions(source, expected):
     assert codes(source) == expected
 
 
+@pytest.mark.parametrize("name", ["PCG64", "PCG64DXSM", "MT19937", "SFC64", "Philox"])
+def test_unseeded_numpy_bit_generators(name):
+    imported = f"from numpy.random import {name}\n"
+    assert codes(imported + f"{name}()") == ["R102"]
+    assert codes(imported + f"{name}(None)") == ["R102"]
+    assert codes(imported + f"{name}(seed=None)") == ["R102"]
+    assert codes(imported + f"{name}(0)") == []
+    assert codes(imported + f"{name}(seed)") == []
+    assert codes(imported + f"{name}(**options)") == ["R190"]
+
+
+def test_pcg64_inside_generator_is_the_unseeded_call():
+    source = "from numpy.random import Generator, PCG64\nGenerator(PCG64())"
+    active, _ = analyze(source, "train.py")
+    column = source.splitlines()[1].index("PCG64()") + 1
+    assert [(item.code, item.column) for item in active] == [("R102", column)]
+    assert "numpy.random.PCG64" in active[0].message
+    assert codes("from numpy.random import Generator, PCG64\nGenerator(PCG64(seed))") == []
+
+
+def test_philox_key_pins_entropy_but_counter_does_not():
+    imported = "from numpy.random import Philox\n"
+    assert codes(imported + "Philox(key=1)") == []
+    assert codes(imported + "Philox(key=stream)") == []
+    assert codes(imported + "Philox(key=None)") == ["R102"]
+    assert codes(imported + "Philox(counter=1)") == ["R102"]
+    assert codes(imported + "Philox(seed=None, key=1)") == []
+
+
+def test_mtrand_random_state_is_the_legacy_constructor():
+    assert codes("from numpy.random.mtrand import RandomState\nRandomState()") == ["R102"]
+    assert codes("from numpy.random.mtrand import RandomState\nRandomState(0)") == []
+
+
 @pytest.mark.parametrize(
     "module, name",
     [
@@ -218,6 +252,79 @@ def test_nested_scope_does_not_shadow_enclosing_import(nested, seed):
     assert [(item.code, item.line) for item in active] == (
         [("R102", len(source.splitlines()))] if not seed else []
     )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "np = custom\n    def train(self):\n        return np.random.default_rng()",
+        "np = np\n    def train(self):\n        return np.random.default_rng()",
+        "def train(self):\n        return np.random.default_rng()\n    np = custom",
+        (
+            "np = custom\n    class Inner:\n        def train(self):\n"
+            "            return np.random.default_rng()"
+        ),
+        "np = custom\n    train = lambda self: np.random.default_rng()",
+        "np = custom\n    values = [np.random.default_rng() for i in items]",
+        (
+            "np = custom\n    def train(self, rng=np.random.default_rng()):\n"
+            "        return np.random.default_rng()"
+        ),
+    ],
+    ids=[
+        "attribute",
+        "alias",
+        "attribute-after-method",
+        "nested-class",
+        "lambda",
+        "comprehension",
+        "method-default-and-body",
+    ],
+)
+def test_class_body_names_do_not_hide_imports_in_methods(body):
+    source = "import numpy as np\nclass Model:\n    " + body + "\n"
+    active, _ = analyze(source, "train.py")
+    assert [item.code for item in active] == ["R102"]
+    assert all("default_rng" in item.message for item in active)
+
+
+def test_class_body_still_uses_its_own_bindings():
+    assert (
+        codes("""
+    import numpy as np
+    class Model:
+        np = custom
+        value = np.random.default_rng()
+        values = [i for i in np.random.default_rng()]
+        def train(self, rng=np.random.default_rng()):
+            return rng
+    """)
+        == []
+    )
+
+
+def test_method_closes_over_enclosing_function_not_class_attribute():
+    assert (
+        codes("""
+    import numpy as np
+    def factory():
+        np = custom
+        class Model:
+            def train(self):
+                return np.random.default_rng()
+    """)
+        == []
+    )
+
+
+def test_class_attribute_reexport_does_not_hide_method_sklearn_call():
+    assert codes("""
+    from sklearn.ensemble import RandomForestClassifier
+    class Experiment:
+        RandomForestClassifier = RandomForestClassifier
+        def train(self):
+            return RandomForestClassifier()
+    """) == ["R101"]
 
 
 @pytest.mark.parametrize(

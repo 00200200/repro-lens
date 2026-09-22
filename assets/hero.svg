@@ -5,6 +5,13 @@
     <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#101e30"/><stop offset="1" stop-color="#102e36"/></linearGradient>
     <radialGradient id="glow"><stop stop-color="#64dfcf" stop-opacity=".12"/><stop offset="1" stop-color="#64dfcf" stop-opacity="0"/></radialGradient>
     <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#b0dded" stroke-opacity=".035"/></pattern>
+    <style>
+      .cur{animation:blink 1.1s steps(1) infinite}
+      @keyframes blink{50%{opacity:0}}
+      #match{animation:in 5.5s ease infinite}
+      #mismatch{animation:in 5.5s .55s ease infinite}
+      @keyframes in{0%,10%{opacity:0}22%,90%{opacity:1}100%{opacity:0}}
+    </style>
   </defs>
   <rect width="1200" height="400" rx="24" fill="url(#bg)"/>
   <rect width="1200" height="400" rx="24" fill="url(#grid)"/>
@@ -36,16 +43,20 @@
       <rect x="678" y="139" width="134" height="51" rx="9" fill="#1c3342"/>
       <text x="745" y="169" text-anchor="middle" fill="#d8e8f6" font-size="14">report.json</text>
       <path d="M812 165H850V144H881M850 165V232H881" fill="none" stroke="#577589" stroke-width="2"/>
-      <rect x="882" y="115" width="244" height="64" rx="9" fill="#112e30" stroke="#285652"/>
-      <circle cx="900" cy="139" r="4" fill="#64dfcf"/>
-      <text x="914" y="144" fill="#d9eeec" font-size="14">refactor</text>
-      <text x="914" y="164" fill="#64dfcf" font-size="12">matched</text>
-      <rect x="882" y="202" width="244" height="64" rx="9" fill="#30292a" stroke="#5e4540"/>
-      <circle cx="900" cy="226" r="4" fill="#f7bb83"/>
-      <text x="914" y="231" fill="#f3e5df" font-size="14">changed threshold</text>
-      <text x="914" y="251" fill="#f7bb83" font-size="12">mismatch</text>
+      <g id="match">
+        <rect x="882" y="115" width="244" height="64" rx="9" fill="#112e30" stroke="#285652"/>
+        <circle cx="900" cy="139" r="4" fill="#64dfcf"/>
+        <text x="914" y="144" fill="#d9eeec" font-size="14">refactor</text>
+        <text x="914" y="164" fill="#64dfcf" font-size="12">matched</text>
+      </g>
+      <g id="mismatch">
+        <rect x="882" y="202" width="244" height="64" rx="9" fill="#30292a" stroke="#5e4540"/>
+        <circle cx="900" cy="226" r="4" fill="#f7bb83"/>
+        <text x="914" y="231" fill="#f3e5df" font-size="14">changed threshold</text>
+        <text x="914" y="251" fill="#f7bb83" font-size="12">mismatch</text>
+      </g>
     </g>
     <path d="M678 287H1126" stroke="#263e4d"/>
-    <text x="678" y="317" fill="#b5c9d8" font-size="15">Repeatable runs can still disagree with the baseline.</text>
+    <text x="678" y="317" fill="#b5c9d8" font-size="15">Repeatable runs can still disagree with the baseline. <tspan class="cur" fill="#64dfcf">▌</tspan></text>
   </g>
 </svg>

@@ -7,7 +7,8 @@ CLI and coding-agent skill; each links to its command, expected output and limit
 | --- | --- | --- | --- |
 | Explore before/after code without installing | [Browser gallery](https://00200200.github.io/repro-lens/) | A static page with search and filters | Saved findings from the shared checker; no Python or training runs in the browser |
 | Understand why two matching runs can still hide a changed result | [Before/after demo](agent_review/) | A tiny synthetic classifier; no ML dependencies or API key | Equivalent refactor matches; changed threshold mismatches; changed tolerance needs review |
-| Check an actual model refactor | [XGBoost CPU replay](xgboost_review/) | Six small local fits, with pinned dependencies downloaded on first use | Equivalent feature selection matches; changing tree depth mismatches |
+| Check an actual scikit-learn refactor | [scikit-learn CPU replay](sklearn_review/) | Six small local trees, with pinned dependencies downloaded on first use | Equivalent feature selection matches; a depth-1 stump mismatches |
+| Check an actual boosting refactor | [XGBoost CPU replay](xgboost_review/) | Six small local fits, with pinned dependencies downloaded on first use | Equivalent feature selection matches; changing tree depth mismatches |
 | See which framework settings need attention | [Framework screening](framework_checks/) | Static analysis; no framework imports or training | Risky, unresolved and explicitly configured examples show different findings |
 | Try the tool on my existing project | [Advisory rollout](../docs/trying-an-existing-project.md) | Static analysis of my source | Findings to review before enabling a blocking hook |
 | Review a coding agent's edit to my experiment | [Agent workflow](../docs/agent-review.md) | My reviewed experiment command, before and after the edit | Reports show output changes and verification-contract changes |

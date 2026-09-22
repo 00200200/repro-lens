@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 RULES = {
     "R104": "XGBoost's gblinear booster selects the nondeterministic shotgun updater.",
     "R105": "LightGBM's deterministic configuration needs review.",
-    "R106": "PyTorch data sampling has no explicit generator; review global RNG control.",
+    "R106": "PyTorch data sampling has no explicit seeded generator; review global RNG control.",
     "R107": "PyTorch cuDNN benchmarking is explicitly enabled.",
     "R108": "A TensorFlow generator is initialized from nondeterministic state.",
     "R109": "Lightning Trainer's deterministic configuration needs review.",
@@ -132,6 +132,15 @@ TF_NONDETERMINISTIC = {
 }
 LOADERS = {"torch.utils.data.DataLoader", "torch.utils.data.dataloader.DataLoader"}
 SPLITS = {"torch.utils.data.random_split", "torch.utils.data.dataset.random_split"}
+SAMPLERS = {
+    f"{module}.{name}": positions
+    for module in ("torch.utils.data", "torch.utils.data.sampler")
+    for name, positions in (
+        ("RandomSampler", ("data_source", "replacement", "num_samples", "generator")),
+        ("WeightedRandomSampler", ("weights", "num_samples", "replacement", "generator")),
+        ("SubsetRandomSampler", ("indices", "generator")),
+    )
+}
 
 
 # Global RNG state. Each library's seeder list follows its primary documentation:
@@ -223,6 +232,27 @@ SEEDERS = {
     **CROSS_SEEDERS,
 }
 CONSUMERS = {name: library for library, spec in GLOBAL_RNG.items() for name in spec["consumers"]}
+# First argument that actually pins entropy. seed()/seed(None) draw OS or clock entropy.
+SEEDER_PARAMS = {
+    **dict.fromkeys(SEEDERS, "seed"),
+    "numpy.random.set_state": "state",
+    "random.seed": "a",
+    "random.setstate": "state",
+    "torch.set_rng_state": "new_state",
+    "torch.random.set_rng_state": "new_state",
+}
+
+
+def libraries_seeded(node, name):
+    """Libraries this call seeds with an explicit non-None argument; otherwise none."""
+    libraries = SEEDERS.get(name)
+    if not libraries:
+        return set()
+    parameter = SEEDER_PARAMS[name]
+    value = Arguments.call(node, (parameter,)).get(parameter)
+    if value is MISSING or constant(value) is None:
+        return set()
+    return libraries
 
 
 def global_consumer(node, name):
@@ -373,7 +403,42 @@ def check_lightgbm(node, name, options, emit):
             )
 
 
-def check_data(node, name, emit, resolve):
+def unseeded_torch_generator(node, qualified):
+    """True for torch.Generator() or Generator().manual_seed() / manual_seed(None)."""
+    if qualified is None or not isinstance(node, ast.Call):
+        return False
+    if isinstance(node.func, ast.Attribute) and node.func.attr == "manual_seed":
+        ctor = node.func.value
+        if not (isinstance(ctor, ast.Call) and qualified(ctor.func) == "torch.Generator"):
+            return False
+        seed = Arguments.call(node, ("seed",)).get("seed")
+        if seed is UNKNOWN:
+            return False  # *args / **kwargs may carry a seed
+        return seed is MISSING or constant(seed) is None
+    return qualified(node.func) == "torch.Generator"
+
+
+def check_generator(node, name, options, emit, qualified=None):
+    generator = options.get("generator")
+    if generator is UNKNOWN:
+        unresolved(node, name, emit)
+    elif (
+        generator is MISSING
+        or constant(generator) is None
+        or unseeded_torch_generator(generator, qualified)
+    ):
+        emit(
+            node,
+            "R106",
+            f"{name} samples data without an explicit seeded generator.",
+            "Pass torch.Generator().manual_seed with the experiment's seed, or review global "
+            "torch RNG control. Also review random transforms and DataLoader worker "
+            "initialization.",
+            "review",
+        )
+
+
+def check_data(node, name, emit, resolve, qualified=None):
     positions = (
         ("dataset", "lengths", "generator")
         if name in SPLITS
@@ -401,18 +466,7 @@ def check_data(node, name, emit, resolve):
         if shuffle is not True:
             unresolved(node, name, emit)
             return
-    generator = options.get("generator")
-    if generator is UNKNOWN:
-        unresolved(node, name, emit)
-    elif generator is MISSING or constant(generator) is None:
-        emit(
-            node,
-            "R106",
-            f"{name} samples data without an explicit generator.",
-            "Pass the experiment's seeded torch.Generator or review global torch RNG control. "
-            "For DataLoader, also review random transforms and worker initialization.",
-            "review",
-        )
+    check_generator(node, name, options, emit, qualified)
 
 
 def check_trainer(node, name, emit, resolve):
@@ -449,7 +503,7 @@ def check_algorithms(node, name, emit, resolve):
         )
 
 
-def check_call(node, name, emit, resolve=None):
+def check_call(node, name, emit, resolve=None, qualified=None):
     if name in XGBOOST or name in {
         "xgboost.train",
         "xgboost.cv",
@@ -471,7 +525,9 @@ def check_call(node, name, emit, resolve=None):
             options = Arguments.mapping(options.get("params"), resolve)
         check_lightgbm(node, name, options, emit)
     elif name in LOADERS or name in SPLITS:
-        check_data(node, name, emit, resolve)
+        check_data(node, name, emit, resolve, qualified)
+    elif name in SAMPLERS:
+        check_generator(node, name, Arguments.call(node, SAMPLERS[name], resolve), emit, qualified)
     elif name in TF_NONDETERMINISTIC:
         emit(
             node,

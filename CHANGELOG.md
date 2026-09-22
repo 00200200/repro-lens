@@ -3,6 +3,16 @@
 ## Unreleased
 
 - Review pandas `sample()` calls without `random_state` in files that import pandas and never seed NumPy's global RNG (R115).
+- Report unseeded NumPy BitGenerator constructors (`PCG64()`, `MT19937()`, …) as R102, the same as `default_rng()`.
+- Review PyTorch `RandomSampler`, `WeightedRandomSampler` and `SubsetRandomSampler` constructors that omit a seeded generator (R106).
+- Reject JSON numbers that underflow to zero (for example `1e-400`) in experiment results and retained reports, so they cannot match a true `0.0`.
+- Add a scikit-learn CPU replay example that compares an equivalent feature-selection refactor with a shallower tree.
+- Report static check findings as SARIF 2.1.0 (`--format sarif`) or GitHub Actions annotations (`--format github`), with rule links and notebook cell locations in the message.
+- Add a composite GitHub Action that annotates pull requests, optionally writes SARIF for code scanning, and fails according to `fail-on`.
+- State in the report limitations that global RNG seeding is recognized only within the same file.
+- Review global RNG use when a seeder is called without an explicit non-None seed (`seed()`, `seed(None)`, `seed_everything()`).
+- Treat `torch.Generator()` and `Generator().manual_seed(None)` as unseeded for shuffled DataLoader / random_split sampling (R106).
+- Scan methods, lambdas and comprehension expressions using the enclosing function or module, not class-body attributes that share the same name.
 
 ## 0.3.1 — 2026-09-14
 

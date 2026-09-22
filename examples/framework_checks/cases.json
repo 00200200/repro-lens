@@ -52,6 +52,32 @@
     ]
   },
   {
+    "id": "numpy-empty-seed",
+    "name": "NumPy seed without a value",
+    "framework": "NumPy",
+    "question": "Does seed() without a value pin the global RNG?",
+    "explanation": "np.random.seed() and seed(None) draw OS or clock entropy, so they do not make a later shuffle repeatable. Pass the experiment's seed, or switch to a Generator created with that seed.",
+    "before": "import numpy as np\nnp.random.seed()\nindices = np.arange(len(X))\nnp.random.shuffle(indices)\n",
+    "after": "import numpy as np\nnp.random.seed(seed)\nindices = np.arange(len(X))\nnp.random.shuffle(indices)\n",
+    "expected": [
+      "R111",
+      "review"
+    ]
+  },
+  {
+    "id": "python-global-shuffle",
+    "name": "Python global shuffle",
+    "framework": "Python",
+    "question": "Make module-level random state explicit.",
+    "explanation": "random.shuffle draws from Python's module-level generator, and this file never seeds it. A dedicated Random instance keeps the experiment's policy visible; seeding may also happen elsewhere, so this remains a review item.",
+    "before": "import random\nrandom.shuffle(items)\n",
+    "after": "import random\nrng = random.Random(seed)\nrng.shuffle(items)\n",
+    "expected": [
+      "R112",
+      "review"
+    ]
+  },
+  {
     "name": "XGBoost linear updater",
     "before": "import xgboost as xgb\nxgb.XGBRegressor(booster='gblinear', random_state=seed)\n",
     "after": "import xgboost as xgb\nxgb.XGBRegressor(booster='gblinear', updater='coord_descent', random_state=seed)\n",
@@ -102,6 +128,32 @@
     "framework": "PyTorch",
     "question": "Give shuffled loading an explicit generator.",
     "explanation": "A missing generator needs review because RNG state may be managed elsewhere. The example makes generator ownership explicit; worker initialization and dataset behavior still need attention."
+  },
+  {
+    "id": "pytorch-random-sampler",
+    "name": "PyTorch random sampler",
+    "framework": "PyTorch",
+    "question": "Does a sampler need its own generator?",
+    "explanation": "DataLoader does not shuffle when a sampler is passed, so an unseeded RandomSampler is invisible to the shuffle check. The sampler draws from the global RNG until generator= is a seeded torch.Generator. SequentialSampler is not random and is not flagged.",
+    "before": "from torch.utils.data import DataLoader, RandomSampler\nDataLoader(dataset, sampler=RandomSampler(dataset))\n",
+    "after": "import torch\nfrom torch.utils.data import DataLoader, RandomSampler\nDataLoader(dataset, sampler=RandomSampler(dataset, generator=torch.Generator().manual_seed(seed)))\n",
+    "expected": [
+      "R106",
+      "review"
+    ]
+  },
+  {
+    "id": "pytorch-unseeded-generator",
+    "name": "PyTorch unseeded generator",
+    "framework": "PyTorch",
+    "question": "Does passing torch.Generator() seed the shuffle?",
+    "explanation": "DataLoader accepts a generator object, but the constructor draws OS entropy until manual_seed is given a value. Chain manual_seed with the experiment's seed. A generator variable is still accepted without proving that it was seeded.",
+    "before": "import torch\nfrom torch.utils.data import DataLoader\nDataLoader(dataset, shuffle=True, generator=torch.Generator())\n",
+    "after": "import torch\nfrom torch.utils.data import DataLoader\nDataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed(seed))\n",
+    "expected": [
+      "R106",
+      "review"
+    ]
   },
   {
     "name": "PyTorch cuDNN benchmark",

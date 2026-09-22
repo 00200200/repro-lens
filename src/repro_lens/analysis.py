@@ -102,6 +102,18 @@ SKLEARN = {
     "sklearn.datasets.make_regression": "always",
     "sklearn.datasets.make_blobs": "always",
 }
+# BitGenerators with seed=None draw OS entropy, the same as default_rng().
+# Philox also accepts key=; that is handled at the call, not as a separate API kind.
+NUMPY_RNG = {
+    "numpy.random.default_rng",
+    "numpy.random.RandomState",
+    "numpy.random.mtrand.RandomState",
+    "numpy.random.PCG64",
+    "numpy.random.PCG64DXSM",
+    "numpy.random.MT19937",
+    "numpy.random.Philox",
+    "numpy.random.SFC64",
+}
 UNKNOWN = object()
 
 
@@ -126,6 +138,9 @@ class Scanner(ast.NodeVisitor):
     def __init__(self, path, symbols, tree):
         self.path = path
         self.bindings = {}
+        # Methods, lambdas and comprehension expressions skip class bodies (LEGB).
+        self.code_bindings = self.bindings
+        self.class_depth = 0
         self.findings = []
         self.global_uses = []
         self.seeded = set()
@@ -140,6 +155,23 @@ class Scanner(ast.NodeVisitor):
                 key = (scope.get_name(), scope.get_lineno(), frozenset(scope.get_parameters()))
                 self.function_locals[key] = scope.get_locals()
             pending.extend(scope.get_children())
+
+    def _set_bindings(self, bindings):
+        self.bindings = bindings
+        if not self.class_depth:
+            self.code_bindings = bindings
+
+    def _enter_code_scope(self, enclosing):
+        saved = self.bindings, self.code_bindings, self.class_depth
+        self.class_depth = 0
+        self._set_bindings(enclosing.copy())
+        return saved
+
+    def _leave_code_scope(self, saved):
+        self.bindings, self.code_bindings, self.class_depth = saved
+
+    def _enclosing_code(self):
+        return self.code_bindings if self.class_depth else self.bindings
 
     def emit(self, node, code, message, suggestion, severity="warning"):
         self.findings.append(
@@ -211,12 +243,12 @@ class Scanner(ast.NodeVisitor):
         for statement in node.body:
             self.visit(statement)
         then = self.bindings
-        self.bindings = before.copy()
+        self._set_bindings(before.copy())
         for statement in node.orelse:
             self.visit(statement)
-        self.bindings = {
-            name: value for name, value in then.items() if self.bindings.get(name) == value
-        }
+        self._set_bindings(
+            {name: value for name, value in then.items() if self.bindings.get(name) == value}
+        )
 
     def visit_With(self, node):
         for item in node.items:
@@ -230,9 +262,16 @@ class Scanner(ast.NodeVisitor):
     visit_AsyncWith = visit_With
 
     def visit_ListComp(self, node):
-        outer = self.bindings
-        self.bindings = outer.copy()
-        for generator in node.generators:
+        # The first iterator runs in the current scope, including a class body.
+        # The rest is a nested scope and skips class namespaces, like a function.
+        first, *rest = node.generators
+        self.visit(first.iter)
+        saved = self._enter_code_scope(self._enclosing_code())
+        for name in bound_names(first.target):
+            self.bindings.pop(name, None)
+        for condition in first.ifs:
+            self.visit(condition)
+        for generator in rest:
             self.visit(generator.iter)
             for name in bound_names(generator.target):
                 self.bindings.pop(name, None)
@@ -243,7 +282,7 @@ class Scanner(ast.NodeVisitor):
             self.visit(node.value)
         else:
             self.visit(node.elt)
-        self.bindings = outer
+        self._leave_code_scope(saved)
 
     visit_SetComp = visit_ListComp
     visit_GeneratorExp = visit_ListComp
@@ -256,8 +295,7 @@ class Scanner(ast.NodeVisitor):
             if default:
                 self.visit(default)
         self.bindings.pop(node.name, None)
-        outer = self.bindings
-        self.bindings = outer.copy()
+        saved = self._enter_code_scope(self._enclosing_code())
         # The compiler distinguishes this function's locals from bindings in nested scopes.
         # Locals shadow outer imports throughout the function, even before assignment.
         parameters = frozenset(
@@ -268,7 +306,7 @@ class Scanner(ast.NodeVisitor):
             self.bindings.pop(name, None)
         for statement in node.body:
             self.visit(statement)
-        self.bindings = outer
+        self._leave_code_scope(saved)
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
@@ -278,28 +316,31 @@ class Scanner(ast.NodeVisitor):
             self.visit(expression)
         self.bindings.pop(node.name, None)
         outer = self.bindings
-        self.bindings = outer.copy()
+        saved_code = self.code_bindings
+        self.class_depth += 1
+        self._set_bindings(outer.copy())
         for statement in node.body:
             self.visit(statement)
+        self.class_depth -= 1
         self.bindings = outer
+        self.code_bindings = saved_code
 
     def visit_Lambda(self, node):
-        # Defaults are evaluated in the enclosing scope, before parameters shadow imports.
+        # Defaults are evaluated in the current scope, before parameters shadow imports.
         for default in [*node.args.defaults, *node.args.kw_defaults]:
             if default is not None:
                 self.visit(default)
-        outer = self.bindings
-        self.bindings = outer.copy()
+        saved = self._enter_code_scope(self._enclosing_code())
         for argument in ast.iter_child_nodes(node.args):
             if isinstance(argument, ast.arg):
                 self.bindings.pop(argument.arg, None)
         self.visit(node.body)
-        self.bindings = outer
+        self._leave_code_scope(saved)
 
     def visit_Call(self, node):
         name = self.qualified(node.func)
-        frameworks.check_call(node, name, self.emit, self.parameters.resolve)
-        self.seeded |= frameworks.SEEDERS.get(name, set())
+        frameworks.check_call(node, name, self.emit, self.parameters.resolve, self.qualified)
+        self.seeded |= frameworks.libraries_seeded(node, name)
         if library := frameworks.global_consumer(node, name):
             self.global_uses.append((node, name, library))
         if frameworks.pandas_sample(node, name):
@@ -356,11 +397,16 @@ class Scanner(ast.NodeVisitor):
                     )
             else:
                 self.check_seed(node, name, kwargs.get("random_state"), dynamic, "R101")
-        elif name in {"numpy.random.default_rng", "numpy.random.RandomState", "random.Random"}:
+        elif name in NUMPY_RNG or name == "random.Random":
             keyword = "x" if name == "random.Random" else "seed"
             seed = kwargs.get(keyword) or (node.args[0] if node.args else None)
             if isinstance(seed, ast.Starred):
                 seed = None
+            # Philox can be pinned with key= even when seed is omitted or None.
+            if name == "numpy.random.Philox" and (seed is None or literal(seed) is None):
+                key = kwargs.get("key")
+                if key is not None:
+                    seed = key
             code = "R103" if name == "random.Random" else "R102"
             self.check_seed(node, name, seed, dynamic, code)
         self.generic_visit(node)

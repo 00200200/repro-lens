@@ -1,11 +1,13 @@
 <p align="center">
-  <img src="assets/hero.svg" alt="Repro Lens — Same experiment. What changed? Check source, replay runs, compare outputs." width="1200">
+  <img src="assets/hero.svg" alt="Repro Lens — Same experiment. What changed? Check source, replay runs, compare outputs." width="100%">
 </p>
 
 <p align="center">
   <a href="https://github.com/00200200/repro-lens/actions/workflows/ci.yml"><img src="https://github.com/00200200/repro-lens/actions/workflows/ci.yml/badge.svg" alt="Checks"></a>
   <a href="https://github.com/00200200/repro-lens/releases/latest"><img src="https://img.shields.io/github/v/release/00200200/repro-lens?color=64dfcf" alt="Latest release"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.11%2B-9ebcff" alt="Python 3.11 or newer"></a>
+  <img src="https://img.shields.io/badge/static%20check-no%20ML%20deps-3fb950" alt="Static check needs no ML dependencies">
+  <img src="https://img.shields.io/badge/runs%20in-CLI%20·%20pre--commit%20·%20Actions%20·%20agents-8957e5" alt="CLI, pre-commit, GitHub Actions, and coding agents">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64dfcf" alt="MIT license"></a>
   <a href="https://github.com/00200200/repro-lens/stargazers"><img src="https://img.shields.io/github/stars/00200200/repro-lens?style=flat&amp;color=f7bb83" alt="GitHub stars"></a>
 </p>
@@ -28,6 +30,14 @@
 Catch reproducibility risks before a commit, replay an experiment, and compare
 outputs before and after a change. Built for ML developers and coding agents.
 
+```
+check  →  verify  →  compare
+```
+
+<p align="center">
+  <img src="assets/demo-verify.svg" alt="Agent-review demo: baseline and refactor match; a changed threshold mismatches; a changed tolerance is not comparable" width="760">
+</p>
+
 | Command | Question it answers | Evidence |
 | --- | --- | --- |
 | **`check`** | Is there a known reproducibility risk in this code? | Static findings with file locations; scanned code is never imported |
@@ -36,7 +46,7 @@ outputs before and after a change. Built for ML developers and coding agents.
 
 The static checker needs **Python 3.11+**, with **no ML dependencies or API key**.
 Replay runs your configured experiment and needs its dependencies.
-Use the CLI, an opt-in [pre-commit hook](#pre-commit), or the
+Use the CLI, an opt-in [pre-commit hook](#pre-commit), [GitHub Actions](#github-actions), or the
 [reproducibility skill](skills/reproducibility/SKILL.md) in your coding agent.
 
 ## Try the before/after demo
@@ -69,9 +79,10 @@ All four variants reproduce their own outputs. The changed threshold still disag
 
 The [demo](examples/agent_review/) uses a tiny synthetic classifier and scripted edits. It runs without ML dependencies or an API key and retains the actual reports. To check a real coding agent's work, use the [agent workflow](docs/agent-review.md).
 
-For actual model training, try the [XGBoost CPU replay example](examples/xgboost_review/):
-it installs its own locked dependencies and checks whether a refactor or a tree-depth
-change preserves predictions on a small synthetic fixture.
+For actual model training, try the [scikit-learn CPU replay](examples/sklearn_review/)
+or the [XGBoost CPU replay](examples/xgboost_review/): each installs its own locked
+dependencies and checks whether a refactor or a shallower tree preserves predictions
+on a small synthetic fixture.
 
 ## Install
 
@@ -103,6 +114,10 @@ from sklearn.model_selection import train_test_split
 train_test_split(X, y)  # R101: no explicit random_state
 ```
 
+<p align="center">
+  <img src="assets/demo-check.svg" alt="repro-lens check reports R101 on train_test_split without random_state" width="760">
+</p>
+
 The checker recognizes imported aliases, skips non-shuffled splits, and reports dynamic arguments as unresolved. Warnings can be justified with an inline comment. All rules and their limits are described in [docs/rules.md](docs/rules.md).
 
 Explicit seed expressions are accepted without evaluating their values. A clean scan is a useful review signal, not proof that the experiment is reproducible.
@@ -118,7 +133,7 @@ of these frameworks to scan their code.
 | scikit-learn | Explicit randomness control in supported splits, estimators and datasets |
 | XGBoost | `gblinear` with the nondeterministic `shotgun` updater, even with a seed |
 | LightGBM | CPU determinism, device choice and forced histogram configuration |
-| PyTorch | DataLoader/random_split generators, cuDNN benchmarking and deterministic mode |
+| PyTorch | DataLoader, random_split and random Sampler generators; cuDNN benchmarking and deterministic mode |
 | TensorFlow | Generators explicitly initialized from nondeterministic state |
 | Lightning | Trainer determinism, warning-only mode and benchmarking |
 | Global RNG state | NumPy, Python, PyTorch or TensorFlow global randomness used in a file that never seeds it (review) |
@@ -171,6 +186,49 @@ repos:
 ```
 
 Then run `pre-commit install` and `pre-commit run --all-files`. The hook screens code and project policy; experiment replay stays an explicit command. Run a full scan and replay in CI as well.
+
+## GitHub Actions
+
+Findings appear as annotations on the changed lines of a pull request:
+
+```yaml
+jobs:
+  repro-lens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: 00200200/repro-lens@main  # pin a release tag or commit SHA once one includes the action
+        with:
+          root: .            # project directory inside the checkout
+          fail-on: warning   # or `error` to keep warnings advisory
+```
+
+The action uses the runner's Python 3.11+ when there is one, or a uv-managed Python
+otherwise; it installs no packages into your environment. Review items appear as notices
+and never fail the step. Notebook findings are attached to the notebook file, with the
+cell and line in the message. GitHub limits how many annotations a step can show; the
+step log always lists every finding.
+
+To keep results in the repository's code scanning alerts, write SARIF and upload it:
+
+```yaml
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: 00200200/repro-lens@main
+        with:
+          sarif-file: repro-lens.sarif
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: repro-lens.sarif
+```
+
+Outside Actions, `repro-lens check --format sarif` and `--format github` produce the same
+output. Paths are relative to the current directory when `--root` is inside it, so run
+the command from the repository root.
 
 ## Coding agents
 

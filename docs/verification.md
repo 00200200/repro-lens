@@ -2,7 +2,9 @@
 
 For checking an edit against an earlier experiment, retain reports from both revisions
 and use [before-and-after comparison](agent-review.md). Two runs of the current revision
-alone do not establish agreement with the earlier output.
+alone do not establish agreement with the earlier output. The
+[scikit-learn](../examples/sklearn_review/) and [XGBoost](../examples/xgboost_review/)
+CPU examples run this comparison on actual local fits.
 
 ```toml
 [tool.repro-lens.verify]
@@ -29,15 +31,17 @@ Runtime metadata must agree as typed JSON across both runs; for example, `true` 
 
 Object keys must be unique within each JSON object. Nonfinite numbers are rejected
 throughout the result, including runtime metadata and undeclared metrics. This includes
-exponents such as `1e999` that overflow Python's float range. These validation errors
-stop verification and preserve an error report, the original result JSON and run logs.
-The result file must not exceed 2,000,000 bytes.
+exponents such as `1e999` that overflow Python's float range and values such as `1e-400`
+that underflow to zero. These validation errors stop verification and preserve an error
+report, the original result JSON and run logs. The result file must not exceed 2,000,000
+bytes.
 
 Numeric comparisons use `abs(a - b) <= max(atol, rtol * max(abs(a), abs(b)))`, with
 exact arithmetic on the parsed values. Integer metrics keep their full precision;
 zero tolerances require numeric equality, including for counts above `2**53`.
 Decimal literals in JSON and TOML still undergo Python's usual binary floating-point
-rounding during parsing; comparison introduces no further rounding. Artifacts use
+rounding during parsing; comparison introduces no further rounding. Literals that
+underflow to zero are rejected rather than stored as `0.0`. Artifacts use
 exact SHA-256. Undeclared metrics are not compared. Each input glob must match at
 least one file.
 

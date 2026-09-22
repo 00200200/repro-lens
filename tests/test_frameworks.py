@@ -110,8 +110,29 @@ def test_lightgbm_cpu_device_and_histogram_policy(source, expected):
         ("DataLoader(dataset, shuffle=True)", [("R106", "review")]),
         ("DataLoader(dataset, 32, True)", [("R106", "review")]),
         ("DataLoader(dataset, shuffle=True, generator=None)", [("R106", "review")]),
+        ("DataLoader(dataset, shuffle=True, generator=torch.Generator())", [("R106", "review")]),
+        (
+            "DataLoader(dataset, shuffle=True, generator=torch.Generator(device='cpu'))",
+            [("R106", "review")],
+        ),
+        (
+            "DataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed(None))",
+            [("R106", "review")],
+        ),
+        (
+            "DataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed())",
+            [("R106", "review")],
+        ),
+        (
+            "from torch import Generator\nDataLoader(dataset, shuffle=True, generator=Generator())",
+            [("R106", "review")],
+        ),
         ("DataLoader(dataset, shuffle=True, generator=rng)", []),
         ("DataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed(seed))", []),
+        (
+            "DataLoader(dataset, shuffle=True, generator=torch.Generator().manual_seed(*args))",
+            [],
+        ),
         ("DataLoader(dataset, shuffle=False)", []),
         ("DataLoader(dataset)", []),
         ("DataLoader(dataset, shuffle=None)", []),
@@ -128,6 +149,7 @@ def test_lightgbm_cpu_device_and_histogram_policy(source, expected):
         ),
         ("random_split(dataset, [8, 2])", [("R106", "review")]),
         ("random_split(dataset, [8, 2], rng)", []),
+        ("random_split(dataset, [8, 2], torch.Generator())", [("R106", "review")]),
         ("random_split(dataset, [8, 2], None)", [("R106", "review")]),
         ("random_split(dataset, lengths=[8, 2], generator=rng)", []),
         ("random_split(*args, generator=rng)", []),
@@ -137,6 +159,48 @@ def test_lightgbm_cpu_device_and_histogram_policy(source, expected):
 )
 def test_pytorch_sampling_does_not_claim_missing_global_control(source, expected):
     imports = "import torch\nfrom torch.utils.data import DataLoader, random_split\n"
+    assert findings(imports + source) == expected
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("RandomSampler(dataset)", [("R106", "review")]),
+        ("RandomSampler(dataset, generator=None)", [("R106", "review")]),
+        ("RandomSampler(dataset, generator=torch.Generator())", [("R106", "review")]),
+        (
+            "RandomSampler(dataset, generator=torch.Generator().manual_seed(None))",
+            [("R106", "review")],
+        ),
+        ("RandomSampler(dataset, generator=torch.Generator().manual_seed())", [("R106", "review")]),
+        ("RandomSampler(dataset, generator=rng)", []),
+        ("RandomSampler(dataset, generator=torch.Generator().manual_seed(seed))", []),
+        ("RandomSampler(dataset, generator=torch.Generator().manual_seed(*args))", []),
+        ("RandomSampler(dataset, True, 8, rng)", []),
+        ("RandomSampler(dataset, **options)", [("R190", "review")]),
+        ("RandomSampler(*args)", [("R190", "review")]),
+        ("WeightedRandomSampler(weights, 8)", [("R106", "review")]),
+        ("WeightedRandomSampler(weights, num_samples=8, generator=rng)", []),
+        ("WeightedRandomSampler(weights, 8, True, torch.Generator())", [("R106", "review")]),
+        ("SubsetRandomSampler(indices)", [("R106", "review")]),
+        ("SubsetRandomSampler(indices, generator=rng)", []),
+        ("SubsetRandomSampler(indices, torch.Generator())", [("R106", "review")]),
+        ("SequentialSampler(dataset)", []),
+        (
+            "from torch.utils.data.sampler import RandomSampler as Sampler\nSampler(dataset)",
+            [("R106", "review")],
+        ),
+        ("DataLoader(dataset, sampler=RandomSampler(dataset))", [("R106", "review")]),
+        ("DataLoader(dataset, sampler=SequentialSampler(dataset))", []),
+        ("torch.manual_seed(17)\nRandomSampler(dataset)", [("R106", "review")]),
+    ],
+)
+def test_pytorch_random_samplers_need_a_seeded_generator(source, expected):
+    imports = (
+        "import torch\n"
+        "from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, "
+        "SubsetRandomSampler, WeightedRandomSampler\n"
+    )
     assert findings(imports + source) == expected
 
 
@@ -209,6 +273,9 @@ def test_lightning_namespaces_and_modes(namespace, arguments, expected):
         ("xgboost", "lib.XGBClassifier(booster='gblinear')", "R104"),
         ("lightgbm", "lib.LGBMClassifier()", "R105"),
         ("torch.utils.data", "lib.random_split(data, sizes)", "R106"),
+        ("torch.utils.data", "lib.RandomSampler(data)", "R106"),
+        ("torch.utils.data", "lib.WeightedRandomSampler(weights, 8)", "R106"),
+        ("torch.utils.data", "lib.SubsetRandomSampler(indices)", "R106"),
         ("torch", "lib.backends.cudnn.benchmark = True", "R107"),
         ("tensorflow", "lib.random.Generator.from_non_deterministic_state()", "R108"),
         ("lightning.pytorch", "lib.Trainer()", "R109"),
@@ -234,14 +301,25 @@ def test_framework_aliases_shadowing_and_justified_suppression(module, call, cod
         ("import numpy as np\nnp.random.shuffle(x)", ["R111"]),
         ("import numpy as np\nnp.random.seed(seed)\nnp.random.shuffle(x)", []),
         ("import numpy as np\nnp.random.shuffle(x)\nnp.random.seed(seed)", []),
+        ("import numpy as np\nnp.random.seed()\nnp.random.shuffle(x)", ["R111"]),
+        ("import numpy as np\nnp.random.seed(None)\nnp.random.shuffle(x)", ["R111"]),
+        ("import numpy as np\nnp.random.seed(seed=None)\nnp.random.shuffle(x)", ["R111"]),
+        ("import numpy as np\nnp.random.seed(0)\nnp.random.shuffle(x)", []),
+        ("import numpy as np\nnp.random.seed(*args)\nnp.random.shuffle(x)", []),
+        ("from numpy.random import seed, shuffle\nseed()\nshuffle(x)", ["R111"]),
         ("from numpy.random import randint\nrandint(3)", ["R111"]),
         ("from numpy.random import seed, randint\nseed(0)\nrandint(3)", []),
         ("import numpy as np\nrng = np.random.default_rng(seed)\nrng.shuffle(x)", []),
         ("import random\nrandom.shuffle(x)", ["R112"]),
         ("import random\nrandom.seed(seed)\nrandom.shuffle(x)", []),
+        ("import random\nrandom.seed()\nrandom.shuffle(x)", ["R112"]),
+        ("import random\nrandom.seed(None)\nrandom.shuffle(x)", ["R112"]),
+        ("import random\nrandom.seed(a=None)\nrandom.shuffle(x)", ["R112"]),
         ("import random\nrandom.Random(seed).shuffle(x)", []),
         ("import torch\ntorch.randn(3)", ["R113"]),
         ("import torch\ntorch.manual_seed(seed)\ntorch.randn(3)", []),
+        ("import torch\ntorch.manual_seed()\ntorch.randn(3)", ["R113"]),
+        ("import torch\ntorch.manual_seed(None)\ntorch.randn(3)", ["R113"]),
         ("import torch\ntorch.cuda.manual_seed_all(seed)\ntorch.randn(3)", ["R113"]),
         ("import torch\ntorch.randn(3, generator=g)", []),
         ("import torch\ntorch.randn(3, generator=None)", ["R113"]),
@@ -257,6 +335,16 @@ def test_framework_aliases_shadowing_and_justified_suppression(module, call, cod
             "import numpy as np\nimport torch\nfrom lightning import seed_everything\n"
             "seed_everything(seed)\nnp.random.rand()\ntorch.rand(2)",
             [],
+        ),
+        (
+            "import numpy as np\nfrom lightning import seed_everything\n"
+            "seed_everything()\nnp.random.rand()",
+            ["R111"],
+        ),
+        (
+            "import numpy as np\nfrom lightning import seed_everything\n"
+            "seed_everything(None)\nnp.random.rand()",
+            ["R111"],
         ),
         (
             "import numpy as np\nimport torch\nfrom transformers import set_seed\n"
@@ -381,7 +469,7 @@ def test_framework_demo_checks_expected_results_and_detects_a_lost_warning(tmp_p
     result = subprocess.run(command, text=True, capture_output=True)
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(output.read_text())
-    assert len(report["cases"]) == 12
+    assert len(report["cases"]) == 16
     assert all(case["expected_behavior"] for case in report["cases"])
     cases = json.loads(demo.with_name("cases.json").read_text())
     cases[0]["before"] = cases[0]["after"]
