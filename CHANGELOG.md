@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Report unseeded `numpy.random.SeedSequence()` (omitted/`None` entropy) as R102; `spawn_key=` alone still draws OS entropy for the pool.
 - Report unseeded NumPy BitGenerator constructors (`PCG64()`, `MT19937()`, …) as R102, the same as `default_rng()`.
 - Review PyTorch `RandomSampler`, `WeightedRandomSampler` and `SubsetRandomSampler` constructors that omit a seeded generator (R106).
 - Reject JSON numbers that underflow to zero (for example `1e-400`) in experiment results and retained reports, so they cannot match a true `0.0`.

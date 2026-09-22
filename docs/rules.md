@@ -67,12 +67,15 @@ a custom estimator. This registry does not model every library version or every
 estimator's parameter conditions.
 
 R102 covers `numpy.random.default_rng`, `RandomState` (including
-`numpy.random.mtrand.RandomState`) and the public BitGenerator constructors
-`PCG64`, `PCG64DXSM`, `MT19937`, `Philox` and `SFC64`. NumPy's
+`numpy.random.mtrand.RandomState`), `SeedSequence`, and the public BitGenerator
+constructors `PCG64`, `PCG64DXSM`, `MT19937`, `Philox` and `SFC64`. NumPy's
 [Generator guide](https://numpy.org/doc/stable/reference/random/generator.html)
 constructs `Generator(PCG64())`; with `seed=None` those constructors draw OS
 entropy, the same as `default_rng()`. The finding is on the BitGenerator call.
-`Philox(key=...)` counts as entropy control; `counter=` alone does not (see
+`SeedSequence()` with omitted/`None` `entropy` likewise draws OS entropy
+([SeedSequence](https://numpy.org/doc/stable/reference/random/bit_generators/generated/numpy.random.SeedSequence.html));
+`spawn_key=` alone does not pin the pool. `Philox(key=...)` counts as entropy
+control; `counter=` alone does not (see
 [Philox](https://numpy.org/doc/stable/reference/random/bit_generators/philox.html)).
 `numpy.random.Generator(...)` itself is not flagged: it requires a BitGenerator.
 

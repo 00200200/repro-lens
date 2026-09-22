@@ -103,6 +103,22 @@ def test_mtrand_random_state_is_the_legacy_constructor():
     assert codes("from numpy.random.mtrand import RandomState\nRandomState(0)") == []
 
 
+def test_unseeded_numpy_seed_sequence():
+    imported = "from numpy.random import SeedSequence\n"
+    assert codes(imported + "SeedSequence()") == ["R102"]
+    assert codes(imported + "SeedSequence(None)") == ["R102"]
+    assert codes(imported + "SeedSequence(entropy=None)") == ["R102"]
+    # spawn_key alone still draws OS entropy for the pool.
+    assert codes(imported + "SeedSequence(spawn_key=(1,))") == ["R102"]
+    assert codes(imported + "SeedSequence(0)") == []
+    assert codes(imported + "SeedSequence(entropy)") == []
+    assert codes(imported + "SeedSequence(entropy=stream)") == []
+    assert codes(imported + "SeedSequence(**options)") == ["R190"]
+    assert codes("import numpy as np\nnp.random.SeedSequence()") == ["R102"]
+    active, _ = analyze(imported + "SeedSequence()", "train.py")
+    assert "entropy" in active[0].message
+
+
 @pytest.mark.parametrize(
     "module, name",
     [
