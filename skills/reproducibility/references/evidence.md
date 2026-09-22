@@ -5,7 +5,7 @@ Repro Lens implements screening and a limited two-run comparison.
 
 An integer random_state resets an estimator's RNG between fits. A RandomState instance
 can deliberately advance it, including between CV folds. Both can belong to a repeatable
-overall program. New unseeded default_rng or BitGenerator instances (`PCG64()`, …) do not inherit np.random.seed.
+overall program. New unseeded default_rng, SeedSequence or BitGenerator instances (`PCG64()`, …) do not inherit np.random.seed.
 Seed evidence is needed at the random operation; `seed=42` in TOML alone proves nothing
 about its use. Consult version-specific framework documentation before changing behavior.
 
