@@ -137,6 +137,7 @@ of these frameworks to scan their code.
 | TensorFlow | Generators explicitly initialized from nondeterministic state |
 | Lightning | Trainer determinism, warning-only mode and benchmarking |
 | Global RNG state | NumPy, Python, PyTorch or TensorFlow global randomness used in a file that never seeds it (review) |
+| pandas | `sample()` without `random_state` in a file that never seeds NumPy (review, development checkout) |
 
 Known risks are warnings; settings that may be controlled elsewhere are nonblocking
 `review` items. Native boosting `train`/`cv` calls accept inline parameter dictionaries.

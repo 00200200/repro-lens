@@ -362,6 +362,52 @@ def test_global_rng_use_is_reviewed_when_the_file_never_seeds_it(source, expecte
     assert [item[0] for item in findings(source)] == expected
 
 
+PD = "import pandas as pd\n"
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        (PD + "df.sample(frac=0.2)", ["R115"]),
+        (PD + "df.sample(n=5, replace=True)", ["R115"]),
+        (PD + "df.groupby('g').sample(n=1)", ["R115"]),
+        (PD + "pd.read_csv(path).sample(frac=1.0, ignore_index=True)", ["R115"]),
+        (PD + "df.sample(frac=0.2, random_state=None)", ["R115"]),
+        ("from pandas import DataFrame\ndf.sample(frac=0.5)", ["R115"]),
+        (PD + "df.sample(frac=0.2, random_state=seed)", []),
+        (PD + "df.sample(frac=0.2, random_state=rng)", []),
+        (PD + "import numpy as np\nnp.random.seed(seed)\ndf.sample(frac=0.2)", []),
+        (PD + "from lightning import seed_everything\nseed_everything(1)\ndf.sample(n=3)", []),
+        (PD + "import torch\ntorch.manual_seed(1)\ndf.sample(n=3)", ["R115"]),
+        ("df.sample(frac=0.2)", []),
+        ("import polars as pl\ndf.sample(fraction=0.2, seed=None)", []),
+        (PD + "df.sample()", []),
+        (PD + "df.sample(5)", []),
+        (PD + "from sklearn.mixture import GaussianMixture\ngmm.sample(100)", []),
+        (PD + "kde.sample(n_samples=44)", []),
+        (PD + "rng.sample(population, 3)", []),
+        (PD + "rng.sample(population, k=3)", []),
+        (PD + "dist.sample((5,))", []),
+        (PD + "df.sample(**options)", []),
+        (PD + "df.sample(*args)", []),
+        (PD + "import random\nrandom.sample(items, 3)", ["R112"]),
+    ],
+)
+def test_pandas_sample_without_random_state_is_reviewed(source, expected):
+    assert [item[0] for item in findings(source)] == expected
+
+
+def test_pandas_sample_findings_are_review_items_with_locations():
+    active, suppressed = analyze(
+        "import pandas as pd\n\ntrain = frame.sample(frac=0.8)\n"
+        "subset = frame.sample(n=5)  # repro-lens: ignore[R115] -- Exploratory preview only.\n",
+        "split.py",
+    )
+    assert [(f.code, f.severity, f.line, f.column) for f in active] == [("R115", "review", 3, 9)]
+    assert "without random_state draws from NumPy's global RNG" in active[0].message
+    assert [(f.code, f.line) for f in suppressed] == [("R115", 4)]
+
+
 def test_global_rng_findings_are_review_items_with_locations():
     active, suppressed = analyze(
         "import numpy as np\n\ndef batch():\n    return np.random.permutation(10)\n"

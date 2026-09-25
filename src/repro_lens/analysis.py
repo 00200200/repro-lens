@@ -145,6 +145,8 @@ class Scanner(ast.NodeVisitor):
         self.findings = []
         self.global_uses = []
         self.seeded = set()
+        self.samples = []
+        self.imports_pandas = False
         self.parameters = ParameterDictionaries(tree)
         self.function_locals = {}
         pending = [symbols]
@@ -189,6 +191,7 @@ class Scanner(ast.NodeVisitor):
 
     def visit_Import(self, node):
         for alias in node.names:
+            self.imports_pandas |= alias.name.split(".")[0] == "pandas"
             name = alias.asname or alias.name.split(".")[0]
             self.bindings[name] = alias.name if alias.asname else name
 
@@ -197,6 +200,7 @@ class Scanner(ast.NodeVisitor):
             for alias in node.names:
                 self.bindings.pop(alias.asname or alias.name, None)
             return
+        self.imports_pandas |= node.module.split(".")[0] == "pandas"
         for alias in node.names:
             if alias.name != "*":
                 self.bindings[alias.asname or alias.name] = f"{node.module}.{alias.name}"
@@ -340,6 +344,8 @@ class Scanner(ast.NodeVisitor):
         self.seeded |= frameworks.libraries_seeded(node, name)
         if library := frameworks.global_consumer(node, name):
             self.global_uses.append((node, name, library))
+        if frameworks.pandas_sample(node, name):
+            self.samples.append(node)
         kwargs = {kw.arg: kw.value for kw in node.keywords if kw.arg}
         dynamic = any(kw.arg is None for kw in node.keywords) or any(
             isinstance(arg, ast.Starred) for arg in node.args
@@ -457,6 +463,8 @@ def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Fi
     scanner = Scanner(path, symbols, tree)
     scanner.visit(tree)
     frameworks.report_global_rng(scanner.global_uses, scanner.seeded, scanner.emit)
+    if scanner.imports_pandas:
+        frameworks.report_pandas_sample(scanner.samples, scanner.seeded, scanner.emit)
     suppressions = {}
     invalid = []
     for token in tokenize.generate_tokens(io.StringIO(source).readline):

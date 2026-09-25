@@ -17,6 +17,7 @@ RULES = {
     "R112": "Python's global random module is used, but this file never seeds it.",
     "R113": "PyTorch's global RNG is used, but this file never seeds it.",
     "R114": "TensorFlow's global RNG is used, but this file never seeds it.",
+    "R115": "pandas sample() has no random_state, and this file never seeds NumPy's global RNG.",
 }
 
 MISSING = object()
@@ -268,6 +269,47 @@ def global_consumer(node, name):
         if keyword.arg is None:
             return None  # An expansion may carry that argument; stay silent.
     return library
+
+
+# DataFrame, Series and GroupBy sample() accept these besides random_state (pandas 3.0).
+PANDAS_SAMPLE_KEYWORDS = {"n", "frac", "replace", "weights", "axis", "ignore_index"}
+
+
+def pandas_sample(node, name):
+    """Return True for a pandas-style .sample() call that leaves random_state unset.
+
+    The receiver's type is unknown, so only keyword calls shaped like pandas' signature
+    count. Positional calls are left alone: gmm.sample(100) and kde.sample(44) in
+    scikit-learn look the same as df.sample(5). So are imported functions such as
+    random.sample and ** expansions.
+    """
+    func = node.func
+    if name is not None or not isinstance(func, ast.Attribute) or func.attr != "sample":
+        return False
+    if node.args:
+        return False
+    keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+    if None in keywords or not set(keywords) <= PANDAS_SAMPLE_KEYWORDS | {"random_state"}:
+        return False
+    if "random_state" in keywords:
+        return constant(keywords["random_state"]) is None
+    return bool(keywords)
+
+
+def report_pandas_sample(calls, seeded, emit):
+    """pandas draws from numpy.random when random_state is None, so a NumPy seed controls it."""
+    if "numpy" in seeded:
+        return
+    for node in calls:
+        emit(
+            node,
+            "R115",
+            "sample() without random_state draws from NumPy's global RNG in pandas, "
+            "which this file never seeds.",
+            "Pass random_state=seed, or seed NumPy's global RNG in the reviewed entrypoint. "
+            "The receiver is assumed to be a pandas object because this file imports pandas.",
+            "review",
+        )
 
 
 def report_global_rng(uses, seeded, emit):
