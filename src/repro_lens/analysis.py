@@ -147,6 +147,8 @@ class Scanner(ast.NodeVisitor):
         self.seeded = set()
         self.samples = []
         self.imports_pandas = False
+        self.polars_samples = []
+        self.imports_polars = False
         self.parameters = ParameterDictionaries(tree)
         self.function_locals = {}
         pending = [symbols]
@@ -192,6 +194,7 @@ class Scanner(ast.NodeVisitor):
     def visit_Import(self, node):
         for alias in node.names:
             self.imports_pandas |= alias.name.split(".")[0] == "pandas"
+            self.imports_polars |= alias.name.split(".")[0] == "polars"
             name = alias.asname or alias.name.split(".")[0]
             self.bindings[name] = alias.name if alias.asname else name
 
@@ -201,6 +204,7 @@ class Scanner(ast.NodeVisitor):
                 self.bindings.pop(alias.asname or alias.name, None)
             return
         self.imports_pandas |= node.module.split(".")[0] == "pandas"
+        self.imports_polars |= node.module.split(".")[0] == "polars"
         for alias in node.names:
             if alias.name != "*":
                 self.bindings[alias.asname or alias.name] = f"{node.module}.{alias.name}"
@@ -346,6 +350,8 @@ class Scanner(ast.NodeVisitor):
             self.global_uses.append((node, name, library))
         if frameworks.pandas_sample(node, name):
             self.samples.append(node)
+        if frameworks.polars_sample(node, name):
+            self.polars_samples.append(node)
         kwargs = {kw.arg: kw.value for kw in node.keywords if kw.arg}
         dynamic = any(kw.arg is None for kw in node.keywords) or any(
             isinstance(arg, ast.Starred) for arg in node.args
@@ -465,6 +471,8 @@ def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Fi
     frameworks.report_global_rng(scanner.global_uses, scanner.seeded, scanner.emit)
     if scanner.imports_pandas:
         frameworks.report_pandas_sample(scanner.samples, scanner.seeded, scanner.emit)
+    if scanner.imports_polars:
+        frameworks.report_polars_sample(scanner.polars_samples, scanner.emit)
     suppressions = {}
     invalid = []
     for token in tokenize.generate_tokens(io.StringIO(source).readline):

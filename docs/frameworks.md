@@ -210,6 +210,19 @@ positional calls such as `frame.sample(5)`, `frame.sample()` and `**` expansions
 not reported. A file that handles
 DataFrames without importing pandas is not checked.
 
+## Polars sampling - R118 (review, development checkout)
+
+```python
+import polars as pl
+
+train = frame.sample(fraction=0.8)  # R118 review: no explicit seed.
+train = frame.sample(fraction=0.8, seed=42)  # No finding.
+```
+
+Polars' `DataFrame.sample` and `LazyFrame.sample` draw random subsamples. Calling `.sample()` without passing an explicit `seed` parameter (or passing `seed=None`) leads to non-deterministic data subsets across runs.
+
+The receiver's type is not resolved at runtime. A call is treated as Polars sampling only when the file imports `polars`, the method is `.sample`, and the keyword arguments match Polars' signature: only keywords among `n`, `fraction`, `with_replacement`, `shuffle`, and `seed`. Positional arguments and calls in files that do not import `polars` are not flagged.
+
 ## Dynamic arguments and limits
 
 New framework rules resolve literal `**{...}` expansions and inline `train`/`cv`

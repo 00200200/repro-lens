@@ -18,6 +18,7 @@ RULES = {
     "R113": "PyTorch's global RNG is used, but this file never seeds it.",
     "R114": "TensorFlow's global RNG is used, but this file never seeds it.",
     "R115": "pandas sample() has no random_state, and this file never seeds NumPy's global RNG.",
+    "R118": "Polars sample() has no explicit seed; review random subsampling.",
 }
 
 MISSING = object()
@@ -308,6 +309,43 @@ def report_pandas_sample(calls, seeded, emit):
             "which this file never seeds.",
             "Pass random_state=seed, or seed NumPy's global RNG in the reviewed entrypoint. "
             "The receiver is assumed to be a pandas object because this file imports pandas.",
+            "review",
+        )
+
+
+# Polars DataFrame and LazyFrame sample() accept these besides seed.
+POLARS_SAMPLE_KEYWORDS = {"n", "fraction", "with_replacement", "shuffle"}
+
+
+def polars_sample(node, name):
+    """Return True for a Polars-style .sample() call that leaves seed unset.
+
+    The receiver's type is unknown, so only keyword calls shaped like Polars' signature
+    count. Positional calls are left alone.
+    """
+    func = node.func
+    if name is not None or not isinstance(func, ast.Attribute) or func.attr != "sample":
+        return False
+    if node.args:
+        return False
+    keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+    if None in keywords or not set(keywords) <= POLARS_SAMPLE_KEYWORDS | {"seed"}:
+        return False
+    if "seed" in keywords:
+        return constant(keywords["seed"]) is None
+    return bool(keywords)
+
+
+def report_polars_sample(calls, emit):
+    """Emit one review item per Polars-style .sample() call without an explicit seed."""
+    for node in calls:
+        emit(
+            node,
+            "R118",
+            "sample() without an explicit seed draws non-deterministic random subsamples in "
+            "Polars.",
+            "Pass seed=integer to ensure reproducible sampling in Polars pipelines. "
+            "The receiver is assumed to be a Polars object because this file imports polars.",
             "review",
         )
 

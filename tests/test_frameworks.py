@@ -380,7 +380,7 @@ PD = "import pandas as pd\n"
         (PD + "from lightning import seed_everything\nseed_everything(1)\ndf.sample(n=3)", []),
         (PD + "import torch\ntorch.manual_seed(1)\ndf.sample(n=3)", ["R115"]),
         ("df.sample(frac=0.2)", []),
-        ("import polars as pl\ndf.sample(fraction=0.2, seed=None)", []),
+        ("import polars as pl\ndf.sample(fraction=0.2, seed=None)", ["R118"]),
         (PD + "df.sample()", []),
         (PD + "df.sample(5)", []),
         (PD + "from sklearn.mixture import GaussianMixture\ngmm.sample(100)", []),
@@ -395,6 +395,45 @@ PD = "import pandas as pd\n"
 )
 def test_pandas_sample_without_random_state_is_reviewed(source, expected):
     assert [item[0] for item in findings(source)] == expected
+
+
+PL = "import polars as pl\n"
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        (PL + "df.sample(fraction=0.2)", ["R118"]),
+        (PL + "df.sample(n=100)", ["R118"]),
+        (PL + "df.sample(n=5, with_replacement=True)", ["R118"]),
+        (PL + "df.sample(fraction=0.2, shuffle=True)", ["R118"]),
+        (PL + "pl.read_csv(path).sample(fraction=1.0)", ["R118"]),
+        (PL + "df.sample(fraction=0.2, seed=None)", ["R118"]),
+        ("from polars import DataFrame\ndf.sample(fraction=0.5)", ["R118"]),
+        (PL + "df.sample(n=100, seed=42)", []),
+        (PL + "df.sample(fraction=0.2, seed=123)", []),
+        ("df.sample(n=100)", []),
+        (PL + "df.sample()", []),
+        (PL + "df.sample(100)", []),
+        (PL + "df.sample(**options)", []),
+    ],
+)
+def test_polars_sample_without_seed_is_reviewed(source, expected):
+    assert [item[0] for item in findings(source)] == expected
+
+
+def test_polars_sample_findings_are_review_items_with_locations():
+    active, suppressed = analyze(
+        "import polars as pl\n\ntrain = frame.sample(fraction=0.8)\n"
+        "subset = frame.sample(n=5)  # repro-lens: ignore[R118] -- Exploratory preview only.\n",
+        "split.py",
+    )
+    assert [(f.code, f.severity, f.line, f.column) for f in active] == [("R118", "review", 3, 9)]
+    assert (
+        "without an explicit seed draws non-deterministic random subsamples in Polars"
+        in active[0].message
+    )
+    assert [(f.code, f.line) for f in suppressed] == [("R118", 4)]
 
 
 def test_pandas_sample_findings_are_review_items_with_locations():
