@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = ["scikit-learn>=1.6,<2"]
 
 [dependency-groups]
-dev = ["pytest>=8,<9", "ruff>=0.12,<1", "pre-commit>=4,<5"]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1", "pre-commit>=4,<5"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ml_project"]
