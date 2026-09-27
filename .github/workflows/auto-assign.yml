@@ -1,0 +1,66 @@
+name: Auto Assign Contributor
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    if: |
+      !github.event.issue.pull_request &&
+      github.event.comment.user.login != github.repository_owner &&
+      github.event.comment.user.type != 'Bot'
+    permissions:
+      issues: write
+    steps:
+      - name: Auto-assign volunteer
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const commentBody = context.payload.comment.body.toLowerCase();
+            const keywords = [
+              'assign', 'work on this', 'take this', 'pick this up',
+              'can i take', 'can i work', 'claim', 'interested in working'
+            ];
+            const isVolunteer = keywords.some(kw => commentBody.includes(kw));
+            if (!isVolunteer) {
+              return;
+            }
+
+            const issueNumber = context.payload.issue.number;
+            const commenter = context.payload.comment.user.login;
+
+            // Check existing assignees
+            const assignees = (context.payload.issue.assignees || []).map(a => a.login);
+            if (assignees.includes(commenter)) {
+              console.log(`${commenter} is already assigned.`);
+              return;
+            }
+
+            const reply = [
+              `Hi @${commenter}! Thanks for offering to help.`,
+              '',
+              `You're assigned to this issue! Feel free to open a pull request whenever you have a solution ready. If you need any guidance or have questions, ask away right here.`,
+              '',
+              `Happy coding! 🚀`
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: reply
+            });
+
+            try {
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                assignees: [commenter]
+              });
+            } catch (err) {
+              console.log(`Could not add assignee directly: ${err.message}`);
+            }

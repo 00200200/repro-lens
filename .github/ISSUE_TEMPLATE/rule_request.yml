@@ -1,0 +1,51 @@
+name: Propose a reproducibility rule
+description: Suggest a new static reproducibility check for ML code or frameworks.
+title: "feat(rules): "
+labels: ["enhancement", "rules"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing a new reproducibility rule!
+        Repro Lens rules statically detect non-deterministic ML behavior without running the target code.
+        Please provide both passing and failing examples.
+  - type: input
+    id: library
+    attributes:
+      label: Target library / API
+      description: Which library and functions/classes are affected? (e.g. PyTorch `DataLoader`, Polars `sample`)
+      placeholder: "e.g. torch.utils.data.DataLoader"
+    validations:
+      required: true
+  - type: textarea
+    id: failure-mode
+    attributes:
+      label: What is the reproducibility failure mode?
+      description: Explain why unpinned calls or specific arguments cause non-deterministic behavior. Include links to official documentation if available.
+    validations:
+      required: true
+  - type: textarea
+    id: failing-example
+    attributes:
+      label: Failing example (code that should be flagged)
+      description: Provide a minimal Python snippet that causes non-deterministic results.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: passing-example
+    attributes:
+      label: Passing example (code that should NOT be flagged)
+      description: Provide valid code achieving reproducibility that the rule must leave alone.
+      render: python
+    validations:
+      required: true
+  - type: dropdown
+    id: level
+    attributes:
+      label: Proposed severity level
+      options:
+        - "review (advisory, never fails commit)"
+        - "warning (fails commit by default)"
+    validations:
+      required: true

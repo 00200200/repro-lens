@@ -1,0 +1,362 @@
+[
+  {
+    "id": 1,
+    "title": "feat(rules): Review PyTorch DataLoader with num_workers > 0 lacking worker_init_fn (R116)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "### Context & Motivation\nIn PyTorch, when creating a `DataLoader` with `num_workers > 0`, each subprocess worker inherits the same NumPy and Python random state as the parent process unless a custom `worker_init_fn` is provided. This is a notorious source of subtle reproducibility failures in deep learning (documented in the [PyTorch Reproducibility Guide](https://pytorch.org/docs/stable/notes/randomness.html#dataloader)). Each worker ends up generating identical random augmentations or permutations across processes.\n\n### Proposed Specification\nIntroduce rule **R116** (`review` level):\nFlag calls to `torch.utils.data.DataLoader` (and imported `DataLoader`) where:\n1. `num_workers` is passed as a positive integer literal (`> 0`) or variable, AND\n2. `worker_init_fn` is missing or explicitly `None`.\n\n### Passing and Failing Examples\n```python\n# ❌ FAILS (R116 review): num_workers > 0 without worker_init_fn\nfrom torch.utils.data import DataLoader\nloader = DataLoader(dataset, batch_size=32, num_workers=4, shuffle=True)\n\n# ❌ FAILS (R116 review): explicit worker_init_fn=None\nloader = DataLoader(dataset, batch_size=32, num_workers=2, worker_init_fn=None)\n\n# ✅ PASSES: worker_init_fn provided\ndef seed_worker(worker_id):\n    worker_seed = torch.initial_seed() % 2**32\n    np.random.seed(worker_seed)\n    random.seed(worker_seed)\n\ng = torch.Generator().manual_seed(42)\nloader = DataLoader(dataset, batch_size=32, num_workers=4, worker_init_fn=seed_worker, generator=g)\n\n# ✅ PASSES: single process (num_workers=0 or omitted)\nloader = DataLoader(dataset, batch_size=32, generator=g)\n```\n\n### Implementation Pointers\n- `src/repro_lens/frameworks.py`: Add `DataLoader` check in PyTorch inspection functions.\n- `src/repro_lens/analysis.py`: Register rule code `R116` in `RULES`.\n- `tests/test_frameworks.py`: Add positive and negative test cases.\n- `docs/rules.md` & `docs/frameworks.md`: Document rule definition and limitations.\n\n### Acceptance Criteria\n- [ ] Rule R116 implemented with stdlib AST only.\n- [ ] Unit tests covering missing vs present `worker_init_fn`.\n- [ ] Zero false alarms on `num_workers=0` or omitted `num_workers`.\n- [ ] Documentation updated in `docs/rules.md`.\n"
+  },
+  {
+    "id": 2,
+    "title": "feat(rules): Hugging Face Transformers TrainingArguments / Trainer determinism check (R117)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "### Context & Motivation\nHugging Face `transformers` is the standard library for NLP and LLM training. `TrainingArguments` provides `seed`, `data_seed`, and `full_determinism`. By default:\n- `full_determinism` is `False`.\n- `data_seed` defaults to `None`.\nWithout `full_determinism=True`, PyTorch deterministic algorithms and worker seeds are not fully locked down, leading to run-to-run variations in evaluations.\n\n### Proposed Specification\nIntroduce rule **R117** (`review` level):\n1. Target calls to `transformers.TrainingArguments(...)` or `TrainingArguments(...)`.\n2. Report R117 if `full_determinism` is not explicitly set to `True`, or if `data_seed` is missing when dataset preprocessing/shuffling occurs.\n\n### Passing and Failing Examples\n```python\n# ❌ FAILS (R117 review): default arguments omit full_determinism\nfrom transformers import TrainingArguments\n\nargs = TrainingArguments(output_dir=\"./results\", per_device_train_batch_size=16)\n\n# ✅ PASSES: explicit full_determinism and seeds specified\nargs = TrainingArguments(\n    output_dir=\"./results\",\n    seed=42,\n    data_seed=42,\n    full_determinism=True,\n)\n```\n\n### Implementation Pointers\n- `src/repro_lens/frameworks.py`: Add `TRANSFORMERS` argument inspection helper using `Arguments.call`.\n- `docs/frameworks.md`: Add a new section for Hugging Face Transformers.\n\n### Acceptance Criteria\n- [ ] AST parsing for `transformers.TrainingArguments` and `Trainer`.\n- [ ] Tests in `tests/test_frameworks.py`.\n- [ ] Passing documentation in `docs/frameworks.md`.\n"
+  },
+  {
+    "id": 3,
+    "title": "feat(rules): Detect Polars DataFrame random sampling without seed (R118)",
+    "labels": [
+      "good first issue",
+      "enhancement"
+    ],
+    "body": "### Context & Motivation\nFollowing the implementation of `R115` for `pandas.DataFrame.sample()`, Polars is increasingly replacing Pandas in high-performance ML pipelines. Calling `DataFrame.sample()` or `LazyFrame.sample()` without the `seed` keyword argument draws non-deterministic random subsamples on every execution.\n\n### Proposed Specification\nIntroduce rule **R118** (`review` level):\nFlag `.sample(...)` method calls on variables or chains where:\n- The `seed` keyword argument is missing or set to `None`.\n\n### Passing and Failing Examples\n```python\n# ❌ FAILS (R118 review): unseeded sample\nimport polars as pl\ndf = pl.read_csv(\"data.csv\")\nsample = df.sample(n=100)\n\n# ✅ PASSES: explicit seed passed\nsample = df.sample(n=100, seed=42)\nsample = df.sample(fraction=0.2, seed=123)\n```\n\n### Implementation Pointers\n- Model directly after `R115` (`src/repro_lens/frameworks.py`).\n- Add tests in `tests/test_frameworks.py`.\n\n### Acceptance Criteria\n- [ ] Detects unseeded `.sample(n=...)` and `.sample(fraction=...)`.\n- [ ] Honors `# repro-lens: ignore[R118]`.\n- [ ] Full unit test coverage.\n"
+  },
+  {
+    "id": 4,
+    "title": "feat(rules): Detect unseeded CatBoostClassifier / CatBoostRegressor (R119)",
+    "labels": [
+      "good first issue",
+      "enhancement"
+    ],
+    "body": "### Context & Motivation\nCatBoost is one of the three major gradient boosting libraries alongside XGBoost (`R104`) and LightGBM (`R105`). While CatBoost has a default `random_seed=0`, initializing estimators without explicitly specifying `random_seed` often leads to issues when tuning hyperparameters or parallelizing training across multi-threaded workers.\n\n### Proposed Specification\nIntroduce rule **R119** (`review` level):\nFlag `CatBoostClassifier`, `CatBoostRegressor`, and `CatBoost` when initialized without explicit `random_seed` (or alias `random_state`).\n\n### Passing and Failing Examples\n```python\n# ❌ FAILS (R119 review): no explicit random_seed\nfrom catboost import CatBoostClassifier\nmodel = CatBoostClassifier(iterations=100)\n\n# ✅ PASSES: explicit random_seed\nmodel = CatBoostClassifier(iterations=100, random_seed=42)\n```\n\n### Acceptance Criteria\n- [ ] Inspect calls to `catboost.CatBoostClassifier`, `CatBoostRegressor`, `CatBoost`.\n- [ ] Handle parameter dictionary expansion.\n- [ ] Add tests in `tests/test_frameworks.py`.\n"
+  },
+  {
+    "id": 5,
+    "title": "feat(rules): Review CUDA determinism without CUBLAS_WORKSPACE_CONFIG set (R120)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "### Context & Motivation\nIn PyTorch, running `torch.use_deterministic_algorithms(True)` on CUDA >= 10.2 will throw a runtime error (`RuntimeError: Deterministic behavior was requested, but CUBLAS_WORKSPACE_CONFIG was not set`) unless the environment variable `CUBLAS_WORKSPACE_CONFIG=:4096:8` or `:16:8` is configured before CUDA initialization.\n\n### Proposed Specification\nIntroduce rule **R120** (`review` level):\nIn any file where `torch.use_deterministic_algorithms(True)` is invoked, check if `os.environ[\"CUBLAS_WORKSPACE_CONFIG\"]` (or `os.putenv`) is assigned in the file. If absent, emit R120 advising the developer to set the environment variable.\n\n### Passing and Failing Examples\n```python\n# ❌ FAILS (R120 review): deterministic algorithms enabled without setting CUBLAS_WORKSPACE_CONFIG\nimport torch\ntorch.use_deterministic_algorithms(True)\n\n# ✅ PASSES: environment variable set prior to call\nimport os\nimport torch\nos.environ[\"CUBLAS_WORKSPACE_CONFIG\"] = \":4096:8\"\ntorch.use_deterministic_algorithms(True)\n```\n\n### Acceptance Criteria\n- [ ] Rule R120 implemented in `src/repro_lens/frameworks.py`.\n- [ ] Documented in `docs/frameworks.md` with links to official PyTorch docs.\n"
+  },
+  {
+    "id": 6,
+    "title": "feat(cli): Add baseline file support (--write-baseline / --baseline) for gradual adoption",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "### Context & Motivation\nSimilar to `mypy --shadow-file`, `detekt --baseline`, or `flake8` baseline plugins: when a team introduces ReproLens into an existing large ML codebase, hundreds of legacy warnings can block CI adoption. Teams need a way to record current findings in a `.repro-lens-baseline.json` file so that only **new** regressions fail the build.\n\n### Proposed Specification\n1. Add `repro-lens check --write-baseline [PATH]`:\n   - Runs scan and writes a JSON snapshot of finding signatures (`file_path`, `rule_code`, hashed call context or line/col).\n2. Add `repro-lens check --baseline [PATH]`:\n   - Filters out any finding present in the baseline file.\n   - Emits an exit code of `0` if all detected findings are in the baseline.\n   - Reports newly introduced findings with standard exit code.\n   - Warns if baseline entries no longer match any code (optional `--clean-baseline`).\n\n### Acceptance Criteria\n- [ ] `--write-baseline <path>` generates portable baseline JSON.\n- [ ] `--baseline <path>` suppresses recorded findings.\n- [ ] Tested in `tests/test_project.py` with mock repos.\n- [ ] Documentation added to `docs/quickstart.md`.\n"
+  },
+  {
+    "id": 7,
+    "title": "feat(cli): Add rich terminal output mode (--format pretty) with code underlines",
+    "labels": [
+      "good first issue",
+      "enhancement"
+    ],
+    "body": "### Context & Motivation\nCurrently, `repro-lens check --format text` prints simple line messages:\n`src/train.py:12:1 R101 [warning] train_test_split lacks explicit random_state`\nModern developer tools like Ruff, Cargo, and Biome display clear snippets with line numbers, code excerpts, and caret (`^^^^`) underlines highlighting the exact error.\n\n### Proposed Specification\nAdd `--format pretty` (and make it default when `sys.stdout.isatty()` is True):\n```text\nwarning[R101]: A supported randomized sklearn call lacks explicit non-None random_state\n  --> src/train.py:12:1\n   |\n12 | X_train, X_test = train_test_split(X, y)\n   |                   ^^^^^^^^^^^^^^^^^^^^^^ missing explicit random_state\n   |\n   = help: Pass an explicit seed, e.g. train_test_split(..., random_state=42)\n```\n- Must remain **stdlib-only** (use standard ANSI escapes; no Rich or external dependencies).\n\n### Acceptance Criteria\n- [ ] ANSI syntax formatting implemented in stdlib.\n- [ ] Clean fallback when `NO_COLOR` is set or stdout is piped.\n- [ ] Tests verifying output formatting.\n"
+  },
+  {
+    "id": 8,
+    "title": "feat(config): Support per-rule severity overrides and rule ignore lists in pyproject.toml",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "### Context & Motivation\nCurrently, users cannot adjust severities (e.g. promoting `R105` review to `warning`, or demoting `R101` warning to `review`), nor can they ignore specific rules globally across a project without adding inline comments to every file.\n\n### Proposed Specification\nExtend `[tool.repro-lens]` configuration in `pyproject.toml`:\n```toml\n[tool.repro-lens]\nignore = [\"R104\", \"R108\"]\n\n[tool.repro-lens.severities]\nR105 = \"warning\"\nR106 = \"error\"\n```\n1. `ignore`: List of rule IDs that will be completely skipped during analysis.\n2. `severities`: Map of `RULE_ID = \"warning\" | \"review\" | \"error\"` to override defaults.\n\n### Acceptance Criteria\n- [ ] Parsed in `src/repro_lens/project.py:read_policy`.\n- [ ] Validated against known rule codes.\n- [ ] Unit tests verifying overrides in `tests/test_project.py`.\n"
+  },
+  {
+    "id": 9,
+    "title": "feat(cli): Add --diff / --suggest mode for automated random_state suggestions",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "### Context & Motivation\nReproLens flags missing seeds like `train_test_split(X, y)` or `RandomForestClassifier()`. Contributors and developers frequently ask for autofix suggestions or a unified diff showing how to fix the finding with an explicit seed.\n\n### Proposed Specification\nAdd a `--diff` flag to `repro-lens check`:\n- Computes unified diff showing suggested insertions (e.g. adding `random_state=42` or `# repro-lens: ignore[R101] -- Reason`).\n- Does not edit files in-place unless `--fix` is passed.\n- Uses Python stdlib `difflib`.\n\n### Acceptance Criteria\n- [ ] CLI argument `--diff` prints unified diff to stdout.\n- [ ] Preserves indentation and existing arguments.\n- [ ] Unit tests for multi-line and single-line call sites.\n"
+  },
+  {
+    "id": 10,
+    "title": "feat(verify): Support numeric tolerance (epsilon / abs_tol / rel_tol) in verify and compare",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "### Context & Motivation\nDeep learning models and multi-threaded CPU libraries frequently yield minute numerical variations (e.g. 0.945000001 vs 0.945000000) due to floating-point associativity and non-deterministic atomic operations on GPUs. Currently, `repro-lens verify` and `repro-lens compare` check exact equality of metric values in `result.json`.\n\n### Proposed Specification\n1. In `pyproject.toml`:\n   ```toml\n   [tool.repro-lens.verify]\n   abs-tol = 1e-5\n   rel-tol = 1e-4\n   ```\n2. In `repro-lens compare report1.json report2.json --abs-tol 1e-5`:\n   - Use `math.isclose(a, b, rel_tol=..., abs_tol=...)` for numeric metric comparisons.\n   - If values differ within tolerance, report as `matched (within tolerance)`.\n\n### Acceptance Criteria\n- [ ] Tolerant comparison implemented in `src/repro_lens/comparison.py`.\n- [ ] Configurable via `pyproject.toml` and CLI flag.\n- [ ] Tests covering floating point comparisons.\n"
+  },
+  {
+    "id": 11,
+    "title": "feat(verify): Capture hardware & runtime fingerprint (CPU, GPU, CUDA, OS) in verification reports",
+    "labels": [
+      "good first issue",
+      "enhancement"
+    ],
+    "body": "### Context & Motivation\nWhen comparing experiment runs using `repro-lens compare`, outputs may diverge simply because run A ran on an Intel CPU and run B ran on an Apple Silicon or NVIDIA GPU. Recording hardware metadata provides immediate evidence of environmental discrepancies.\n\n### Proposed Specification\nExtend `verify()` output schema in `result.json` to include an `environment` block:\n```json\n\"environment\": {\n  \"platform\": \"Darwin-23.5.0-arm64\",\n  \"python\": \"3.11.8\",\n  \"processor\": \"arm\",\n  \"cuda_available\": false\n}\n```\nAll details must be collected using standard library modules (`platform`, `sys`, `os`).\n\n### Acceptance Criteria\n- [ ] Environment block added to verify report.\n- [ ] `compare` highlights environment differences if metrics mismatch.\n- [ ] Unit tests in `tests/test_verify.py`.\n"
+  },
+  {
+    "id": 12,
+    "title": "feat(init): Add a reproducible PyTorch & Lightning template to repro-lens init",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "### Context & Motivation\nCurrently, `repro-lens init` only generates a scikit-learn template (`templates/sklearn`). Deep learning developers need a starter template showing how to properly configure PyTorch or Lightning for reproducibility (including seeded `DataLoader`, `worker_init_fn`, deterministic flags, and verification contract).\n\n### Proposed Specification\n1. Add `templates/pytorch` with:\n   - A minimal reproducible training script (`train.py`) with a small synthetic dataset.\n   - Configured `seed_everything` / `worker_init_fn`.\n   - `pyproject.toml` with `[tool.repro-lens.verify]` contract.\n2. Update CLI: `repro-lens init <dest> --template [sklearn|pytorch]`.\n\n### Acceptance Criteria\n- [ ] `templates/pytorch` directory added and bundled in wheel.\n- [ ] CLI supports `--template pytorch`.\n- [ ] Passes `repro-lens check` and `repro-lens verify` cleanly.\n"
+  },
+  {
+    "id": 13,
+    "title": "feat(action): Add PR Commenter mode to GitHub Action for visual reproducibility summaries",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "### Context & Motivation\nCurrently, `00200200/repro-lens` action outputs workflow annotations and writes SARIF. Adding a markdown PR summary comment gives reviewers immediate visibility into reproducibility status directly in the conversation timeline.\n\n### Proposed Specification\nAdd an input to `action.yml`:\n```yaml\ninputs:\n  comment-on-pr:\n    description: 'Post or update a sticky reproducibility summary comment on the Pull Request'\n    default: 'false'\n```\nWhen enabled, uses the GitHub API to post a neat markdown table:\n```markdown\n### 🔍 ReproLens Check Summary\n- **Files checked:** 14\n- **Findings:** 0 warnings, 1 review item\n| Rule | File | Location | Message |\n| --- | --- | --- | --- |\n| R105 | `src/model.py` | L45 | LightGBM deterministic configuration needs review |\n```\n\n### Acceptance Criteria\n- [ ] Supports sticky comment updates on subsequent commits.\n- [ ] Gracefully falls back when run outside PR triggers.\n"
+  },
+  {
+    "id": 14,
+    "title": "perf(analysis): Implement parallel multi-process scanning for large codebases",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "### Context & Motivation\nIn large machine learning repositories containing hundreds of notebooks and scripts, scanning files sequentially in a single thread can take several seconds.\n\n### Proposed Specification\nIn `src/repro_lens/project.py`:\n- Use `concurrent.futures.ProcessPoolExecutor` to analyze files in parallel when file count exceeds a threshold (e.g. > 20 files).\n- Maintain deterministic output ordering by collecting results and sorting by `(path, cell, line, code)`.\n- Support `--jobs / -j` CLI flag to control worker concurrency.\n\n### Acceptance Criteria\n- [ ] Parallel AST analysis using stdlib `concurrent.futures`.\n- [ ] Benchmarks showing >= 2x speedup on multi-core machines for large projects.\n- [ ] Deterministic sorting preserved.\n"
+  },
+  {
+    "id": 15,
+    "title": "docs(examples): Add realistic Hugging Face fine-tuning tutorial & interactive gallery case",
+    "labels": [
+      "good first issue",
+      "documentation"
+    ],
+    "body": "### Context & Motivation\nContributors and users learn best from hands-on examples. Adding a realistic case in `examples/` and a browser playground case in `site/` demonstrating how to take a non-deterministic Hugging Face training script and make it reproducible will drive community engagement.\n\n### Proposed Specification\n1. Add `examples/huggingface_review/`:\n   - Non-deterministic baseline vs reproducible version.\n   - Readme explaining the failure mode and verification command.\n2. Add a new interactive case in `site/gallery/` for the web playground.\n\n### Acceptance Criteria\n- [ ] Self-contained example with synthetic data.\n- [ ] Validated by `tests/test_gallery.py`.\n- [ ] Listed in `examples/README.md`.\n"
+  },
+  {
+    "id": 16,
+    "title": "feat(rules): Detect unseeded DistributedSampler & missing set_epoch() in PyTorch DDP (R121)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: PyTorch DistributedDataParallel (DDP) & Hugging Face Accelerate.\n- **Problem**: When using `DistributedSampler` in PyTorch DDP:\n  1. If `seed` is not passed, it defaults to `0`, which is fine, but if workers randomize it independently, worker batches overlap.\n  2. More critically: if `sampler.set_epoch(epoch)` is omitted at the beginning of each epoch in the training loop, the sampler yields the exact same shuffle order for *every single epoch*! This is documented in the [PyTorch DDP tutorial](https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler) as one of the most common silent bugs in distributed training.\n- **Proposed Specification**:\n  - Rule `R121` (`review` level):\n    1. Flag `DistributedSampler(dataset)` when `seed` keyword is missing or `shuffle=True` without seed control.\n    2. Check `for epoch in ...:` loops containing `for ... in dataloader:` to verify if `sampler.set_epoch` is invoked. If absent, emit a warning.\n- **Example**:\n  ```python\n  # ❌ FAILS (R121 review): sampler.set_epoch(epoch) missing inside epoch loop\n  sampler = DistributedSampler(dataset)\n  loader = DataLoader(dataset, sampler=sampler)\n  for epoch in range(epochs):\n      for batch in loader:\n          train_step(batch)\n\n  # ✅ PASSES:\n  for epoch in range(epochs):\n      sampler.set_epoch(epoch)\n      for batch in loader:\n          train_step(batch)\n  ```\n- **Files**: `src/repro_lens/frameworks.py`, `tests/test_frameworks.py`.\n\n---"
+  },
+  {
+    "id": 17,
+    "title": "feat(rules): Detect stale / un-split JAX PRNG keys (R122)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: JAX / Flax functional PRNG design.\n- **Problem**: JAX has explicit stateless PRNGs (`jax.random.PRNGKey`). A classic JAX anti-pattern is reusing the same PRNG key across multiple stochastic calls (e.g. `jax.random.normal(key, ...)`) instead of splitting it (`key, subkey = jax.random.split(key)`). Reusing the same key produces identical numbers in different layers or steps!\n- **Proposed Specification**:\n  - Rule `R122` (`warning` level):\n    - Track AST variable names assigned from `jax.random.PRNGKey` or `jax.random.split`.\n    - If the same key variable is passed into multiple `jax.random.*` calls in the same function scope without a re-splitting statement, flag the subsequent calls.\n- **Example**:\n  ```python\n  # ❌ FAILS (R122 warning): key reused without split\n  key = jax.random.PRNGKey(42)\n  w1 = jax.random.normal(key, (10, 10))\n  w2 = jax.random.normal(key, (10, 10))  # w2 will be identical to w1!\n\n  # ✅ PASSES:\n  key, subkey1, subkey2 = jax.random.split(key, 3)\n  w1 = jax.random.normal(subkey1, (10, 10))\n  w2 = jax.random.normal(subkey2, (10, 10))\n  ```\n- **Files**: `src/repro_lens/frameworks.py`, `tests/test_frameworks.py`.\n\n---"
+  },
+  {
+    "id": 18,
+    "title": "feat(rules): Detect unseeded Ray Train / Ray Tune distributed worker actors (R123)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: Ray Train (Anyscale) distributed training pipelines.\n- **Problem**: Ray executes training functions across distributed actors/workers in separate processes. If the training function seeds with a fixed constant (e.g. `torch.manual_seed(42)`), all worker processes across the cluster generate identical random batches, corrupting parallel data loading. Each worker must combine the base seed with `ray.train.get_context().get_world_rank()`.\n- **Proposed Specification**:\n  - Rule `R123` (`review` level):\n    - In functions decorated with `@ray.remote` or passed to `TorchTrainer(train_loop_per_worker=...)`, flag hardcoded fixed seeds in `torch.manual_seed(N)` or `np.random.seed(N)` if the rank/worker ID is not incorporated.\n- **Files**: `src/repro_lens/frameworks.py`.\n\n---"
+  },
+  {
+    "id": 19,
+    "title": "feat(rules): Flag torch.cuda.manual_seed without manual_seed_all in multi-GPU code (R124)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: PyTorch multi-GPU randomness guidelines.\n- **Problem**: `torch.cuda.manual_seed(seed)` only initializes the RNG for the currently active GPU (default GPU 0). If the script uses `torch.cuda.device_count() > 1`, `DataParallel`, or multi-GPU tensors, GPUs 1..N remain unseeded.\n- **Proposed Specification**:\n  - Rule `R124` (`warning` level):\n    - When `torch.cuda.manual_seed(...)` is used, recommend `torch.cuda.manual_seed_all(...)` unless explicit single-GPU affinity is established.\n- **Example**:\n  ```python\n  # ❌ FAILS:\n  torch.cuda.manual_seed(42)\n\n  # ✅ PASSES:\n  torch.cuda.manual_seed_all(42)\n  ```\n- **Files**: `src/repro_lens/frameworks.py`.\n\n---"
+  },
+  {
+    "id": 20,
+    "title": "feat(rules): Detect non-deterministic LLM generation parameters in vLLM & Hugging Face (R125)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: vLLM (`SamplingParams`), Hugging Face `GenerationConfig`, and OpenAI SDK.\n- **Problem**: In Generative AI pipelines and LLM evaluation benchmarks, `SamplingParams(temperature=0.7)` or `model.generate(..., do_sample=True)` without an explicit `seed=` produces completely non-deterministic responses on each call. This invalidates LLM-as-a-judge scores and benchmark comparisons.\n- **Proposed Specification**:\n  - Rule `R125` (`warning` level):\n    - Flag `vllm.SamplingParams` or `SamplingParams` where `temperature > 0` and `seed` is omitted or `None`.\n    - Flag `model.generate(...)` or `GenerationConfig(...)` where `do_sample=True` and `seed` is missing.\n- **Example**:\n  ```python\n  # ❌ FAILS:\n  from vllm import SamplingParams\n  params = SamplingParams(temperature=0.8, top_p=0.95)\n\n  # ✅ PASSES:\n  params = SamplingParams(temperature=0.8, top_p=0.95, seed=42)\n  ```\n- **Files**: `src/repro_lens/frameworks.py`.\n\n---"
+  },
+  {
+    "id": 21,
+    "title": "feat(rules): Detect train-test data leakage via pre-split fit() / fit_transform() (R126)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: `dslinter` (Delft University of Technology) & `Cleanlab`.\n- **Problem**: A catastrophic reproducibility and scientific validity issue: calling `StandardScaler().fit_transform(X)` or `imputer.fit(X)` *before* calling `train_test_split(X, y)` leaks information (mean, variance, distribution) from the test set into the training pipeline.\n- **Proposed Specification**:\n  - Rule `R126` (`warning` level):\n    - Identify transformer estimators (`StandardScaler`, `MinMaxScaler`, `SimpleImputer`, `PCA`, etc.).\n    - In the same scope, if `.fit()` or `.fit_transform()` is called on a dataset variable *prior* to that variable being split by `train_test_split()`, flag data leakage.\n- **Files**: `src/repro_lens/analysis.py`.\n\n---"
+  },
+  {
+    "id": 22,
+    "title": "feat(rules): Detect unseeded dataset.shuffle() in Hugging Face Datasets (R127)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: Hugging Face `datasets` library.\n- **Problem**: Calling `dataset.shuffle()` in HF Datasets uses Python's global RNG or internal seeds unless `seed=` is explicitly provided. Unseeded shuffling also prevents Hugging Face's disk caching mechanism from reusing shuffled shards.\n- **Proposed Specification**:\n  - Rule `R127` (`review` level):\n    - Inspect method calls `.shuffle(...)` on suspected HF dataset objects or `load_dataset(...)` chains. Flag if `seed` is missing.\n- **Example**:\n  ```python\n  # ❌ FAILS:\n  dataset = dataset.shuffle()\n\n  # ✅ PASSES:\n  dataset = dataset.shuffle(seed=42)\n  ```\n- **Files**: `src/repro_lens/frameworks.py`.\n\n---"
+  },
+  {
+    "id": 23,
+    "title": "feat(rules): Flag order-dependent iteration over unordered sets/dicts in feature pipelines (R128)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: CPython `PYTHONHASHSEED` non-determinism.\n- **Problem**: In Python 3.3+, string hash randomization is enabled by default (`PYTHONHASHSEED=random`). Iterating over a `set` (e.g. `for category in set(labels):`) or converting `list(set(x))` creates an arbitrary ordering that changes every time Python restarts! If this order is used to map categorical features to integer IDs, model inputs differ between runs.\n- **Proposed Specification**:\n  - Rule `R128` (`review` level):\n    - Flag `for x in set(...)` or `list(set(...))` when used in feature encoding, vocabulary construction, or indexing logic without wrapping in `sorted(...)`.\n- **Example**:\n  ```python\n  # ❌ FAILS (R128 review): set ordering varies across Python process restarts\n  vocab = {token: idx for idx, token in enumerate(set(tokens))}\n\n  # ✅ PASSES: deterministic sorting\n  vocab = {token: idx for idx, token in enumerate(sorted(set(tokens)))}\n  ```\n- **Files**: `src/repro_lens/analysis.py`.\n\n---"
+  },
+  {
+    "id": 24,
+    "title": "feat(rules): Detect non-deterministic partition shuffling in Dask DataFrames (R129)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: Dask distributed dataframe execution.\n- **Problem**: In Dask, `ddf.shuffle()` or `ddf.sample(frac=0.5)` partitions data across workers. Without specifying `shuffle=\"tasks\"` or passing a deterministic `random_state`, partition division and sample extraction diverge between scheduler runs.\n- **Proposed Specification**:\n  - Rule `R129` (`review` level):\n    - Check `dask.dataframe` calls to `.sample()` or `.shuffle()` lacking explicit `random_state` or `seed`.\n- **Files**: `src/repro_lens/frameworks.py`.\n\n---"
+  },
+  {
+    "id": 25,
+    "title": "feat(rules): Warn on GPU operations with non-deterministic CUDA atomicAdd (R130)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: PyTorch Reproducibility Notes & NVIDIA NGC determinism docs.\n- **Problem**: Certain PyTorch operations on CUDA devices use floating-point `atomicAdd` internally, which has non-deterministic accumulation order due to thread race conditions:\n  - `torch.Tensor.index_add_`\n  - `torch.Tensor.scatter_add_`\n  - `torch.bincount`\n  - `torch.nn.functional.ctc_loss`\n  - `torch.nn.functional.interpolate` with bilinear/bicubic modes.\n- **Proposed Specification**:\n  - Rule `R130` (`review` level):\n    - Flag direct calls to these operations advising users of known hardware-level nondeterminism and suggesting deterministic alternatives (e.g. `torch.use_deterministic_algorithms(True)`).\n- **Files**: `src/repro_lens/frameworks.py`.\n\n---"
+  },
+  {
+    "id": 26,
+    "title": "feat(verify): Audit multi-threading determinism (OMP_NUM_THREADS, MKL_NUM_THREADS)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: PyTorch, OpenBLAS, and Intel MKL determinism guides.\n- **Problem**: Even with identical seeds, multi-threaded matrix multiplications (via OpenMP, Intel MKL, or OpenBLAS) can yield non-deterministic floating-point roundoff if the number of threads or thread allocation dynamic scheduling varies between runs.\n- **Proposed Specification**:\n  - In `repro-lens verify`:\n    - Inspect environment variables: `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`.\n    - If unpinned or set to dynamic values, emit a warning in the verification report recommending explicit pinning (e.g. `export OMP_NUM_THREADS=1` or fixed count).\n- **Files**: `src/repro_lens/verify.py`.\n\n---"
+  },
+  {
+    "id": 27,
+    "title": "feat(notebooks): Detect out-of-order execution risk via notebook execution count gaps (R131)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: Jupyter, `nbdime`, and academic studies on Jupyter reproducibility.\n- **Problem**: The single biggest cause of irreproducibility in Jupyter Notebooks (`.ipynb`) is that cells were executed out of order by the human (e.g. Cell 5 executed before Cell 2, or Cell 8 re-executed 3 times). When saved, the notebook reflects the file order, but its outputs reflect the messy human execution sequence.\n- **Proposed Specification**:\n  - Rule `R131` (`review` level):\n    - In `src/repro_lens/notebooks.py`, inspect cell `execution_count` integers.\n    - If `execution_count` sequence is non-monotonic (e.g. `[1, 5, 2, 6]`), contains `null` (unexecuted cells), or jumps unexpectedly, report `R131`: \"Notebook cells were executed out of order; rerun from top to bottom before committing.\"\n- **Files**: `src/repro_lens/notebooks.py`, `tests/test_notebooks.py`.\n\n---"
+  },
+  {
+    "id": 28,
+    "title": "feat(verify): Multi-seed experiment variance & confidence interval verification (--seeds)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: CleanRL and Gymnasium benchmark standards.\n- **Problem**: Running an experiment twice with the same seed verifies determinism. But verifying scientific reproducibility across seeds requires testing that metrics don't collapse or swing wildly.\n- **Proposed Specification**:\n  - Add `repro-lens verify --seeds 42,43,44,45`:\n    - Executes the experiment across $N$ seeds.\n    - Computes mean, variance, and standard deviation for each metric.\n    - Checks that metric variance remains within configured bounds:\n      ```toml\n      [tool.repro-lens.verify.stability]\n      accuracy = { max_std = 0.02 }\n      ```\n- **Files**: `src/repro_lens/verify.py`, `src/repro_lens/cli.py`.\n\n---"
+  },
+  {
+    "id": 29,
+    "title": "feat(verify): Verify input dataset immutability via SHA256 snapshot hashes",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: DVC (Data Version Control) and Git LFS.\n- **Problem**: When `repro-lens verify` runs, or `repro-lens compare` compares two runs, if an underlying input data file was silently modified (or a row appended), the comparison fails even though the code is deterministic.\n- **Proposed Specification**:\n  - In `[tool.repro-lens.verify]`, support hashing inputs:\n    ```toml\n    [tool.repro-lens.verify]\n    inputs = [\"data/train.csv\", \"config.yaml\"]\n    hash-inputs = true\n    ```\n  - Store SHA256 hashes of all input files in the run report.\n  - In `compare`, immediately detect if an input data file changed.\n- **Files**: `src/repro_lens/verify.py`, `src/repro_lens/comparison.py`.\n\n---"
+  },
+  {
+    "id": 30,
+    "title": "feat(verify): Add containerized/isolated replay mode via Docker/Podman (--sandbox)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: SWE-bench execution harness & OpenHands sandbox.\n- **Problem**: `repro-lens verify` currently runs the experiment directly on the host machine. If an untrusted script or PR modifies files, downloads packages, or writes to global directories, it can pollute the host.\n- **Proposed Specification**:\n  - Add `repro-lens verify --sandbox docker`:\n    - Automatically mounts the project directory in a clean container, runs verification, and extracts `result.json`.\n- **Files**: `src/repro_lens/verify.py`, `src/repro_lens/cli.py`.\n\n---"
+  },
+  {
+    "id": 31,
+    "title": "feat(agent): Generate machine-readable agent review verdicts for AI assistants (agent-eval)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: SWE-bench, Aider, and Antigravity Agent skills.\n- **Problem**: AI coding assistants (like Claude Code, Codex, Antigravity) need an immediate, structured verdict after making a refactor: \"Did I break reproducibility? If so, what changed?\"\n- **Proposed Specification**:\n  - Add `repro-lens agent-review --baseline <before.json> --after <after.json>`:\n    - Outputs a specialized JSON format containing:\n      - `verdict`: `\"APPROVED\"` | `\"REJECTED\"` | `\"NEEDS_HUMAN_REVIEW\"`\n      - `delta_metrics`: percentage change per metric.\n      - `risk_assessment`: explanation of any new unseeded calls introduced in the diff.\n- **Files**: `src/repro_lens/comparison.py`, `skills/reproducibility/`.\n\n---"
+  },
+  {
+    "id": 32,
+    "title": "feat(export): Export verification & compare evidence as W&B / MLflow run artifacts",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: Weights & Biases (W&B) and MLflow tracking.\n- **Problem**: ML teams track their experiments on W&B or MLflow. Having reproducibility reports stored alongside the run enables teams to audit models before deployment.\n- **Proposed Specification**:\n  - Add `--export wandb` or `--export mlflow`:\n    - Automatically logs `repro_lens_report.json`, static scan summary, and artifact hashes to the active W&B or MLflow run.\n- **Files**: `src/repro_lens/cli.py`, `src/repro_lens/verify.py`.\n\n---"
+  },
+  {
+    "id": 33,
+    "title": "feat(engine): Custom YAML-based rule definitions (plugin architecture)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: Semgrep custom rules & ESLint plugin architecture.\n- **Problem**: Organizations often have internal libraries (e.g. `company_ml.data.load()`) that require specific random seeds. Hardcoding them into ReproLens core is not scalable.\n- **Proposed Specification**:\n  - Allow defining custom AST matchers in `.repro-lens/rules.yaml`:\n    ```yaml\n    rules:\n      - id: C101\n        severity: warning\n        message: \"company_ml.split requires explicit seed argument\"\n        match:\n          call: \"company_ml.split\"\n          missing_kwargs: [\"seed\"]\n    ```\n- **Files**: `src/repro_lens/analysis.py`, `src/repro_lens/project.py`.\n\n---"
+  },
+  {
+    "id": 34,
+    "title": "feat(lsp): Implement lightweight Language Server Protocol (LSP) for editor diagnostics",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: Ruff LSP (`ruff-lsp`) and Biome.\n- **Problem**: Developers want real-time feedback inside VS Code, Cursor, and Neovim as they write code, rather than waiting for git pre-commit hooks.\n- **Proposed Specification**:\n  - Add a lightweight `repro-lens lsp` server command using stdlib / minimal JSON-RPC.\n  - Publishes `textDocument/publishDiagnostics` on file save/open.\n- **Files**: `src/repro_lens/lsp.py`, `src/repro_lens/cli.py`.\n\n---"
+  },
+  {
+    "id": 35,
+    "title": "feat(cli): Add --add-ignores flag to batch-suppress legacy warnings with comments",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: ESLint (`--fix`), Ruff suppressions.\n- **Problem**: When introducing ReproLens to a legacy codebase with 200 findings, manually writing `# repro-lens: ignore[R101] -- Legacy unseeded call` on 200 lines takes hours.\n- **Proposed Specification**:\n  - Add `repro-lens check --add-ignores`:\n    - Automatically appends `# repro-lens: ignore[CODE] -- TODO: Review reproducibility` to every flagged line.\n- **Files**: `src/repro_lens/cli.py`, `src/repro_lens/project.py`.\n\n---"
+  },
+  {
+    "id": 36,
+    "title": "feat(fix): Concrete Syntax Tree (CST) based lossless autofixes for missing seeds",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: LibCST, Ruff autofix engine, ast-grep.\n- **Problem**: Python's standard `ast` does not preserve comments or exact token whitespace. To implement safe autofixes (`repro-lens check --fix`), a lossless CST or token-based insertion engine is required.\n- **Proposed Specification**:\n  - Use Python's stdlib `tokenize` to find the exact closing parenthesis of a call site and safely inject `, random_state=42` without mangling existing comments.\n- **Files**: `src/repro_lens/autofix.py`, `src/repro_lens/cli.py`.\n\n---"
+  },
+  {
+    "id": 37,
+    "title": "feat(analysis): Intra-procedural taint tracking for unseeded RNG parameters",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: CodeQL and SonarQube taint analysis.\n- **Problem**: When a developer wraps an estimator:\n  ```python\n  def make_model(seed=None):\n      return RandomForestClassifier(random_state=seed)\n  ```\n  ReproLens currently sees `random_state=seed` and assumes it is seeded, even though the default argument is `None`!\n- **Proposed Specification**:\n  - Track function parameters within the same file: if a parameter defaults to `None` and is forwarded directly to `random_state`, flag the function definition or the unseeded call site.\n- **Files**: `src/repro_lens/analysis.py`.\n\n---"
+  },
+  {
+    "id": 38,
+    "title": "feat(policy): Verify lockfile synchronicity with active environment before verify (P204)",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: `uv lock --check`, `pip check`.\n- **Problem**: A user runs `repro-lens verify`, but their local `.venv` has different package versions than what is committed in `uv.lock`. This produces a false sense of reproducibility.\n- **Proposed Specification**:\n  - Add policy rule `P204` (`error` level):\n    - Check if `uv.lock` or `poetry.lock` exists.\n    - If `uv` is available, run `uv lock --check` or compare installed package hashes with lockfile entries.\n- **Files**: `src/repro_lens/project.py`, `src/repro_lens/verify.py`.\n\n---"
+  },
+  {
+    "id": 39,
+    "title": "feat(ci): GitHub Action check-run summary with collapsible failure diffs",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: GitHub Super-Linter, Vitest PR reporter.\n- **Problem**: In GitHub Actions, when `repro-lens verify` or `compare` fails, developers have to dig through raw console logs to find which metric diverged.\n- **Proposed Specification**:\n  - Use GitHub Actions Step Summary (`$GITHUB_STEP_SUMMARY`) to write a beautiful markdown table with collapsible diff sections (`<details><summary>Output differences</summary>`).\n- **Files**: `action.yml`, `src/repro_lens/project.py`.\n\n---"
+  },
+  {
+    "id": 40,
+    "title": "docs(examples): Reproducible DeepSpeed & Megatron-LM distributed training tutorial",
+    "labels": [
+      "enhancement",
+      "help wanted"
+    ],
+    "body": "- **SOTA Inspiration**: DeepSpeed / Megatron-LM documentation.\n- **Problem**: Contributors and users working on large models need an end-to-end tutorial showing how to achieve bitwise reproducibility across 3D parallelism (Data, Tensor, Pipeline parallel).\n- **Proposed Specification**:\n  - Add `examples/deepspeed_megatron_review/`:\n    - Shows how to configure DeepSpeed MoE / Megatron RNG trackers.\n    - Documents why tensor parallel rank seeds must differ while data parallel rank seeds must match.\n- **Files**: `examples/deepspeed_megatron_review/README.md`."
+  }
+]

@@ -7,3 +7,4 @@ dist/
 *.egg-info/
 .repro-lens/
 .DS_Store
+.serena/

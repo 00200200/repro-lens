@@ -1,0 +1,15 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: ['**/*.md', 'docs/**', 'examples/**']
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: ['.github/**', 'Makefile', 'Dockerfile*']
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file: ['tests/**', 'test_*.py', '*_test.py']
+
+enhancement:
+  - changed-files:
+      - any-glob-to-any-file: ['src/**', 'pyproject.toml']
