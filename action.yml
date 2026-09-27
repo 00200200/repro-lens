@@ -29,7 +29,7 @@ runs:
         done
         echo "command=" >> "$GITHUB_OUTPUT"
     - if: steps.python.outputs.command == ''
-      uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
     - shell: bash
       env:
         PYTHON: ${{ steps.python.outputs.command }}
