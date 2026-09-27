@@ -15,7 +15,7 @@ dependencies = []
 repro-lens = "repro_lens.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8,<9", "ruff>=0.12,<1", "pre-commit>=4,<5", "pyyaml>=6,<7"]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1", "pre-commit>=4,<5", "pyyaml>=6,<7"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/repro_lens"]
