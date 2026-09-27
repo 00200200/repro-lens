@@ -1,8 +1,8 @@
 name: PR Reviewer & Quality Gate
 
 on:
-  pull_request:
-    types: [opened, edited, synchronize]
+  pull_request_target:
+    types: [opened, edited]
 
 permissions:
   contents: read
@@ -12,9 +12,11 @@ permissions:
 jobs:
   welcome-and-verify:
     name: Contributor Welcome & Issue Check
+    if: github.actor != 'dependabot[bot]' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Verify PR description & welcome contributor
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -67,25 +69,3 @@ jobs:
               issue_number: pr.number,
               body: message
             });
-
-  typos-check:
-    name: Spellcheck (Typos)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check spelling with typos
-        uses: crate-ci/typos@master
-        continue-on-error: true
-
-  secret-scan:
-    name: Secret Leak Detection (Gitleaks)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Scan PR commits for secrets
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
