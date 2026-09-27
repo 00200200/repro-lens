@@ -17,6 +17,7 @@
 | R113 | review | PyTorch's global RNG is used in a file that never seeds it |
 | R114 | review | TensorFlow's global RNG is used in a file that never seeds it |
 | R115 | review | pandas `sample()` has no random_state in a file that never seeds NumPy |
+| R118 | review | Polars `sample()` has no explicit seed |
 | R190 | review | Dynamic arguments or framework configuration prevent a decision |
 | P201 | error | A file required by this project's policy is missing |
 | P202 | error | Project configuration is invalid |
