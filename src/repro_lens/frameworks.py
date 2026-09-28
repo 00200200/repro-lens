@@ -110,6 +110,11 @@ LIGHTGBM = {
     for module in ("lightgbm", "lightgbm.sklearn")
     for estimator in ("LGBMModel", "LGBMClassifier", "LGBMRegressor", "LGBMRanker")
 }
+CATBOOST = {
+    f"{module}.{estimator}"
+    for module in ("catboost",)
+    for estimator in ("CatBoost", "CatBoostClassifier", "CatBoostRegressor")
+}
 TRAINERS = {
     f"{module}.Trainer"
     for module in (
@@ -394,6 +399,21 @@ def check_xgboost(node, name, options, emit):
         elif updater is UNKNOWN:
             unresolved(node, name, emit)
 
+def check_catboost(node, name, options, emit):
+    seed = options.value("random_seed")
+    if seed is MISSING:
+        seed = options.value("random_state")
+
+    if seed is UNKNOWN:
+        unresolved(node, name, emit)
+    elif seed is MISSING:
+        emit(
+            node,
+            "R119",
+            f"{name} initialized without explicit random_seed or random_state.",
+            "Pass an explicit random_seed (or random_state) to ensure reproducible training.",
+            "review",
+        )
 
 def check_lightgbm(node, name, options, emit):
     deterministic = options.value("deterministic", False)
@@ -562,6 +582,9 @@ def check_call(node, name, emit, resolve=None, qualified=None):
         if name not in LIGHTGBM:
             options = Arguments.mapping(options.get("params"), resolve)
         check_lightgbm(node, name, options, emit)
+    elif name in CATBOOST:
+        options = Arguments.call(node, (), resolve)
+        check_catboost(node, name, options, emit)
     elif name in LOADERS or name in SPLITS:
         check_data(node, name, emit, resolve, qualified)
     elif name in SAMPLERS:

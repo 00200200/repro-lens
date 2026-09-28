@@ -517,3 +517,21 @@ def test_framework_demo_checks_expected_results_and_detects_a_lost_warning(tmp_p
     result = subprocess.run([*command, "--cases", str(altered)], text=True, capture_output=True)
     assert result.returncode == 1
     assert json.loads(output.read_text())["cases"][0]["expected_behavior"] is False
+    
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("cb.CatBoostClassifier()", [("R119", "review")]),
+        ("cb.CatBoostRegressor(iterations=100)", [("R119", "review")]),
+        ("cb.CatBoost()", [("R119", "review")]),
+        ("cb.CatBoostClassifier(random_seed=42)", []),
+        ("cb.CatBoostRegressor(random_state=17)", []),
+        ("cb.CatBoost(random_seed=0)", []),
+        ("cb.CatBoostClassifier(random_seed=seed_var)", [("R190", "review")]),
+        ("cb.CatBoostClassifier(**options)", [("R190", "review")]),
+        ("cb.CatBoostClassifier(**{'random_seed': 42})", []),
+        ("cb.CatBoostRegressor(**{'iterations': 100})", [("R119", "review")]),
+    ],
+)
+def test_catboost_seed_conditions(source, expected):
+    assert findings("import catboost as cb\n" + source) == expected
