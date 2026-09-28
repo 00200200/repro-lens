@@ -399,6 +399,7 @@ def check_xgboost(node, name, options, emit):
         elif updater is UNKNOWN:
             unresolved(node, name, emit)
 
+
 def check_catboost(node, name, options, emit):
     seed = options.value("random_seed")
     if seed is MISSING:
@@ -414,6 +415,7 @@ def check_catboost(node, name, options, emit):
             "Pass an explicit random_seed (or random_state) to ensure reproducible training.",
             "review",
         )
+
 
 def check_lightgbm(node, name, options, emit):
     deterministic = options.value("deterministic", False)

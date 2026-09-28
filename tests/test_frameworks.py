@@ -517,7 +517,8 @@ def test_framework_demo_checks_expected_results_and_detects_a_lost_warning(tmp_p
     result = subprocess.run([*command, "--cases", str(altered)], text=True, capture_output=True)
     assert result.returncode == 1
     assert json.loads(output.read_text())["cases"][0]["expected_behavior"] is False
-    
+
+
 @pytest.mark.parametrize(
     "source, expected",
     [
