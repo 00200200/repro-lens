@@ -32,6 +32,7 @@ def recorded_report():
             "atol": 0,
             "rtol": 0,
             "result": "result.json",
+            "hash-inputs": True,
         },
         "environment": {"runner_python": "3.11", "platform": "test", "machine": "test"},
         "inputs_sha256": {"train.py": "b" * 64, "data.csv": "c" * 64},
@@ -71,12 +72,31 @@ def test_equal_outputs_still_expose_changed_added_and_removed_inputs(tmp_path):
     after["inputs_sha256"] = {"train.py": "d" * 64, "replacement.csv": "e" * 64}
     result = compare_pair(tmp_path, before, after)
     assert result["status"] == "matched"
+    assert result["input_immutability"] == "changed"
     assert result["input_changes"] == {
         "added": ["replacement.csv"],
         "removed": ["data.csv"],
         "modified": ["train.py"],
     }
     assert "Input removed: data.csv" in render_comparison(result, "text")
+    assert "Input immutability: changed" in render_comparison(result, "text")
+
+
+def test_unchanged_inputs_are_marked_immutable(tmp_path):
+    report = recorded_report()
+    result = compare_pair(tmp_path, report, report)
+    assert result["input_immutability"] == "unchanged"
+    assert result["input_changes"] == {"added": [], "removed": [], "modified": []}
+
+
+def test_legacy_reports_without_hash_inputs_still_compare(tmp_path):
+    before = recorded_report()
+    after = copy.deepcopy(before)
+    del before["configuration"]["hash-inputs"]
+    del after["configuration"]["hash-inputs"]
+    result = compare_pair(tmp_path, before, after)
+    assert result["status"] == "matched"
+    assert result["input_immutability"] == "unchanged"
 
 
 @pytest.mark.parametrize("first,second", [(1, 2), (2**53, 2**53 + 1), (10**400, 10**400 + 1)])

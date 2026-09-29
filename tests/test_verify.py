@@ -1,3 +1,4 @@
+import hashlib
 import json
 import textwrap
 from pathlib import Path
@@ -5,10 +6,17 @@ from pathlib import Path
 import pytest
 
 from repro_lens.cli import main
-from repro_lens.verify import read_verify_config, verify
+from repro_lens.verify import (
+    digest,
+    input_snapshot,
+    input_snapshot_path,
+    load_input_snapshot,
+    read_verify_config,
+    verify,
+)
 
 
-def experiment(tmp_path, body, extra="", metrics='["score"]', artifacts="[]"):
+def experiment(tmp_path, body, extra="", metrics='["score"]', artifacts="[]", inputs=None):
     (tmp_path / "train.py").write_text(
         textwrap.dedent("""
         import json, os, sys, time
@@ -17,10 +25,11 @@ def experiment(tmp_path, body, extra="", metrics='["score"]', artifacts="[]"):
     """)
         + textwrap.dedent(body)
     )
+    inputs = inputs or '["train.py", "pyproject.toml"]'
     (tmp_path / "pyproject.toml").write_text(f"""
 [tool.repro-lens.verify]
 command = ["{{python}}", "train.py", "{{output}}"]
-inputs = ["train.py", "pyproject.toml"]
+inputs = {inputs}
 metrics = {metrics}
 artifacts = {artifacts}
 {extra}
@@ -248,6 +257,62 @@ def test_input_mutation_invalidates_comparison(tmp_path):
     assert "inputs changed" in result["error"]
 
 
+def test_sha256_snapshot_detects_silent_input_edits_across_verifies(tmp_path):
+    (tmp_path / "data.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    experiment(
+        tmp_path,
+        "(out / 'result.json').write_text(json.dumps({'metrics': {'score': 1}}))",
+        inputs='["train.py", "pyproject.toml", "data.csv"]',
+        extra="hash-inputs = true\n",
+    )
+    first = verify(tmp_path)
+    assert first["status"] == "matched"
+    snapshot = input_snapshot_path(tmp_path)
+    assert Path(first["input_snapshot_path"]) == snapshot
+    stored = load_input_snapshot(tmp_path)
+    assert stored == first["inputs_sha256"]
+    assert stored["data.csv"] == digest(tmp_path / "data.csv")
+
+    second = verify(tmp_path)
+    assert second["status"] == "matched"
+    assert second["inputs_sha256"] == first["inputs_sha256"]
+
+    (tmp_path / "data.csv").write_text("a,b\n1,2\n3,4\n", encoding="utf-8")
+    third = verify(tmp_path)
+    assert third["status"] == "error"
+    assert "previous SHA-256 snapshot" in third["error"]
+    assert "data.csv" in third["error"]
+    assert load_input_snapshot(tmp_path) == first["inputs_sha256"]
+
+
+def test_hash_inputs_false_skips_persisted_snapshot(tmp_path):
+    (tmp_path / "data.csv").write_text("row\n", encoding="utf-8")
+    experiment(
+        tmp_path,
+        "(out / 'result.json').write_text(json.dumps({'metrics': {'score': 1}}))",
+        inputs='["train.py", "pyproject.toml", "data.csv"]',
+        extra="hash-inputs = false\n",
+    )
+    first = verify(tmp_path)
+    assert first["status"] == "matched"
+    assert "input_snapshot_path" not in first
+    assert not input_snapshot_path(tmp_path).exists()
+    assert first["inputs_sha256"]["data.csv"] == digest(tmp_path / "data.csv")
+
+    (tmp_path / "data.csv").write_text("row\nchanged\n", encoding="utf-8")
+    second = verify(tmp_path)
+    assert second["status"] == "matched"
+    assert second["inputs_sha256"]["data.csv"] != first["inputs_sha256"]["data.csv"]
+
+
+def test_input_snapshot_hashes_small_temp_files(tmp_path):
+    payload = b"tiny-fixture\n"
+    path = tmp_path / "fixture.bin"
+    path.write_bytes(payload)
+    hashes = input_snapshot(tmp_path, ["fixture.bin"])
+    assert hashes == {"fixture.bin": hashlib.sha256(payload).hexdigest()}
+
+
 def test_timeout_retains_error(tmp_path):
     experiment(tmp_path, "time.sleep(5)", extra="timeout=0.05")
     result = verify(tmp_path)
@@ -270,6 +335,7 @@ def test_missing_inputs_prevent_execution(tmp_path):
         {"atol": float("inf")},
         {"command": "python train.py"},
         {"result": "../outside.json"},
+        {"hash-inputs": "yes"},
     ],
 )
 def test_invalid_contracts_are_rejected(setting):
