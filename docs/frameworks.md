@@ -55,7 +55,7 @@ Supported: `LGBMModel`, `LGBMClassifier`, `LGBMRegressor`, `LGBMRanker` in
 See [LightGBM's determinism guidance](https://lightgbm.readthedocs.io/en/stable/Parameters.html#deterministic)
 (4.7.0 documentation). Different hardware/builds/versions still need separate validation.
 
-## PyTorch — R106, R107, R110
+## PyTorch — R106, R107, R110, R116
 
 ```python
 import torch
@@ -67,6 +67,9 @@ DataLoader(dataset, shuffle=True, generator=torch.Generator())  # R106: construc
 DataLoader(dataset, shuffle=True, generator=seeded_generator)
 DataLoader(dataset, sampler=RandomSampler(dataset))  # R106 at the sampler, not the loader.
 RandomSampler(dataset, generator=torch.Generator().manual_seed(experiment_seed))
+DataLoader(dataset, num_workers=4)  # R116 review: workers inherit parent RNG state.
+DataLoader(dataset, num_workers=4, worker_init_fn=seed_worker)
+DataLoader(dataset, num_workers=0)
 torch.backends.cudnn.benchmark = True  # R107 warning: algorithm-selection risk.
 torch.use_deterministic_algorithms(True, warn_only=True)  # R110 review.
 ```
@@ -84,6 +87,14 @@ not proven. `manual_seed(*args)` stays silent, since the expansion may carry a s
 `SequentialSampler` is not random. Global `torch.manual_seed`, transforms, user-defined
 `Sampler` subclasses and worker callbacks are not followed. `DataLoader(..., sampler=x)`
 does not inspect `x`; the finding is on the sampler constructor.
+
+R116 reviews `DataLoader` calls where `num_workers` is a positive integer literal or a
+non-literal expression (for example a variable) and `worker_init_fn` is missing or
+explicitly `None`. Omitted `num_workers`, `num_workers=0`, and a provided
+`worker_init_fn` are accepted. The body of `worker_init_fn` is not inspected; a
+variable such as `worker_init_fn=fn` is enough. Unknown `**` expansions that may set
+`num_workers` or `worker_init_fn` stay silent. See
+[PyTorch DataLoader worker seeding](https://docs.pytorch.org/docs/2.8/notes/randomness.html#dataloader).
 
 R107 checks direct/annotated `cudnn.benchmark = True` assignments. Dynamic values and
 later overrides are not traced. R110 reviews `use_deterministic_algorithms(False)` or

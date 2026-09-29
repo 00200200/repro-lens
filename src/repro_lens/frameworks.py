@@ -18,6 +18,7 @@ RULES = {
     "R113": "PyTorch's global RNG is used, but this file never seeds it.",
     "R114": "TensorFlow's global RNG is used, but this file never seeds it.",
     "R115": "pandas sample() has no random_state, and this file never seeds NumPy's global RNG.",
+    "R116": "PyTorch DataLoader uses multiple workers without worker_init_fn.",
     "R118": "Polars sample() has no explicit seed; review random subsampling.",
 }
 
@@ -498,6 +499,35 @@ def check_generator(node, name, options, emit, qualified=None):
         )
 
 
+def check_dataloader_workers(node, name, options, emit):
+    """Review multi-worker DataLoaders that omit worker_init_fn (PyTorch reproducibility)."""
+    workers = options.get("num_workers")
+    # Omitted num_workers defaults to 0. An unknown ** expansion alone is not enough
+    # evidence that workers are active.
+    if workers is MISSING or workers is UNKNOWN:
+        return
+    workers_value = constant(workers)
+    positive_literal = (
+        isinstance(workers_value, int) and not isinstance(workers_value, bool) and workers_value > 0
+    )
+    if workers_value is not UNKNOWN and not positive_literal:
+        return
+    init_fn = options.get("worker_init_fn")
+    if init_fn is UNKNOWN:
+        return  # ** expansion may carry worker_init_fn.
+    if init_fn is not MISSING and constant(init_fn) is not None:
+        return
+    emit(
+        node,
+        "R116",
+        f"{name} uses num_workers > 0 without worker_init_fn; workers inherit the "
+        "parent process RNG state.",
+        "Pass a worker_init_fn that seeds NumPy and Python RNGs per worker, or use "
+        "num_workers=0. See PyTorch's DataLoader reproducibility notes.",
+        "review",
+    )
+
+
 def check_data(node, name, emit, resolve, qualified=None):
     positions = (
         ("dataset", "lengths", "generator")
@@ -520,6 +550,7 @@ def check_data(node, name, emit, resolve, qualified=None):
     )
     options = Arguments.call(node, positions, resolve)
     if name in LOADERS:
+        check_dataloader_workers(node, name, options, emit)
         shuffle = options.value("shuffle", False)
         if shuffle is False or shuffle is None:
             return
