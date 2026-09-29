@@ -284,9 +284,116 @@ def add_ignores(root: Path, selected: list[str] | None = None) -> dict:
     return check(root, selected)
 
 
-def render(report: dict, format_: str) -> str:
+def _paint(text: str, style: str, enabled: bool) -> str:
+    if not enabled:
+        return text
+    return f"\033[{style}m{text}\033[0m"
+
+
+def _visual_column(line: str, column: int, tabsize: int = 8) -> tuple[str, int]:
+    """Expand tabs the way a terminal does, and map a 1-based source column."""
+    visual: list[str] = []
+    visual_col = 1
+    mapped = None
+    for index, char in enumerate(line, start=1):
+        if index == column:
+            mapped = visual_col
+        if char == "\t":
+            width = tabsize - (visual_col - 1) % tabsize
+            visual.append(" " * width)
+            visual_col += width
+        else:
+            visual.append(char)
+            visual_col += 1
+    return "".join(visual), mapped if mapped is not None else visual_col
+
+
+def _source_line(root: Path, finding: dict) -> str | None:
+    path = root / finding["path"]
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+    if "cell" in finding:
+        try:
+            cell = json.loads(text)["cells"][finding["cell"] - 1]
+            source = cell.get("source", "")
+            if isinstance(source, list):
+                source = "".join(source)
+            if not isinstance(source, str):
+                return None
+            lines = source.splitlines()
+        except (json.JSONDecodeError, IndexError, KeyError, TypeError, AttributeError):
+            return None
+    else:
+        lines = text.splitlines()
+    index = finding["line"] - 1
+    if not 0 <= index < len(lines):
+        return None
+    return lines[index]
+
+
+def _location(finding: dict) -> str:
+    if "cell" in finding:
+        place = f"{finding['path']}:cell {finding['cell']}:{finding['line']}:{finding['column']}"
+    else:
+        place = f"{finding['path']}:{finding['line']}:{finding['column']}"
+    return place
+
+
+def _pretty_finding(root: Path, finding: dict, color: bool) -> list[str]:
+    style = {"error": "1;31", "warning": "1;33", "review": "1;36"}.get(finding["severity"], "1")
+    label = _paint(f"{finding['severity']}[{finding['code']}]", style, color)
+    rows = [f"{label}: {finding['message']}", f"  --> {_location(finding)}"]
+    source = _source_line(root, finding)
+    if source is None:
+        rows.append(f"   = help: {finding['suggestion']}")
+        return rows
+    visual, column = _visual_column(source, finding["column"])
+    shown = visual.rstrip()
+    start = min(max(column, 1) - 1, len(shown))
+    end = max(len(shown), start + 1)
+    carets = _paint("^" * (end - start), style, color)
+    number = str(finding["line"])
+    gutter = " " * len(number)
+    rows.extend(
+        [
+            f"{gutter} |",
+            f"{number} | {shown}",
+            f"{gutter} | {' ' * start}{carets}",
+            f"{gutter} |",
+            f"{gutter} = help: {finding['suggestion']}",
+        ]
+    )
+    return rows
+
+
+def render_pretty(report: dict, *, color: bool = False) -> str:
+    lines = [
+        f"Repro Lens — {report['files_checked']} Python files and notebooks checked",
+        report["assurance"],
+        "",
+    ]
+    findings = report["findings"]
+    root = Path(report["root"])
+    if not findings:
+        lines.append("No findings from the enabled checks.")
+    for index, finding in enumerate(findings):
+        if index:
+            lines.append("")
+        lines.extend(_pretty_finding(root, finding, color))
+    if report["suppressed"]:
+        if findings:
+            lines.append("")
+        lines.append(f"Suppressed findings: {len(report['suppressed'])}")
+    return "\n".join(lines) + "\n"
+
+
+def render(report: dict, format_: str, *, color: bool = False) -> str:
     if format_ == "json":
         return json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    if format_ == "pretty" and report.get("kind") == "static_check":
+        return render_pretty(report, color=color)
     if report["kind"] != "static_check":
         lines = [f"Repro Lens: {report['status']}", report["assurance"]]
         lines += report.get("differences", [])
