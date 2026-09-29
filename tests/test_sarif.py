@@ -121,6 +121,8 @@ def test_action_scripts_annotate_write_sarif_and_fail_as_configured(tmp_path, fa
     project(workspace / "service")
     output = tmp_path / "github_output"
     output.write_text("")
+    summary = tmp_path / "step_summary.md"
+    summary.write_text("")
     finder, _, checker = action_steps()
     env = {
         **os.environ,
@@ -142,6 +144,7 @@ def test_action_scripts_annotate_write_sarif_and_fail_as_configured(tmp_path, fa
             "FAIL_ON": fail_on,
             "SARIF_FILE": "repro-lens.sarif",
             "PYTHONPATH": str(ROOT / "src"),
+            "GITHUB_STEP_SUMMARY": str(summary),
         },
         capture_output=True,
         text=True,
@@ -151,3 +154,6 @@ def test_action_scripts_annotate_write_sarif_and_fail_as_configured(tmp_path, fa
     assert "::warning file=service/src/train.py,line=2" in result.stdout
     sarif = json.loads((workspace / "repro-lens.sarif").read_text())
     assert len(sarif["runs"][0]["results"]) == 2
+    job_summary = summary.read_text()
+    assert "| Severity | Code | Location | Message |" in job_summary
+    assert "<summary>Finding details</summary>" in job_summary

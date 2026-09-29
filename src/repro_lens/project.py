@@ -8,13 +8,19 @@ import re
 import subprocess
 import tokenize
 import tomllib
+from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
 
 from .analysis import Finding, analyze
+from .frameworks import RULES as FRAMEWORK_RULES
 from .notebooks import notebook_source
 
 LOCKFILE_NAMES = ("uv.lock", "poetry.lock")
+# Rule codes a suppression comment may list.
+SUPPRESSIBLE_CODES = {"R101", "R102", "R103", "R190", *FRAMEWORK_RULES}
+IGNORE_JUSTIFICATION = "TODO: Review reproducibility"
+_EXISTING_IGNORE = re.compile(r"#\s*repro-lens:\s*ignore")
 
 SUFFIXES = {".py", ".ipynb"}
 SKIP = {
@@ -326,9 +332,163 @@ def check(root: Path, selected: list[str] | None = None) -> dict:
     }
 
 
-def render(report: dict, format_: str) -> str:
+def ignore_comment(codes: set[str]) -> str:
+    return f"# repro-lens: ignore[{', '.join(sorted(codes))}] -- {IGNORE_JUSTIFICATION}"
+
+
+def append_ignore_comment(line: str, codes: set[str]) -> str:
+    """Append a justified suppression to a source line, preserving its newline."""
+    ending = "\n" if line.endswith("\n") else ""
+    body = line[:-1] if ending else line
+    if _EXISTING_IGNORE.search(body):
+        return line
+    return f"{body.rstrip()}  {ignore_comment(codes)}{ending}"
+
+
+def add_ignores(root: Path, selected: list[str] | None = None) -> dict:
+    """Write suppression comments for active R* findings on Python call sites, then re-scan.
+
+    Notebooks and non-suppressible findings (P*/S*) are left untouched. Comments use the
+    same `# repro-lens: ignore[CODE] -- reason` form the scanner already understands.
+    """
+    root = root.resolve()
+    report = check(root, selected)
+    by_file: dict[str, dict[int, set[str]]] = defaultdict(lambda: defaultdict(set))
+    for finding in report["findings"]:
+        code = finding["code"]
+        if code not in SUPPRESSIBLE_CODES or "cell" in finding:
+            continue
+        by_file[finding["path"]][finding["line"]].add(code)
+    for relative, lines in sorted(by_file.items()):
+        path = root / relative
+        if path.suffix != ".py" or not path.is_file():
+            continue
+        with tokenize.open(path) as handle:
+            encoding = handle.encoding
+            source_lines = handle.readlines()
+        changed = False
+        for lineno, codes in sorted(lines.items()):
+            if not 1 <= lineno <= len(source_lines):
+                continue
+            updated = append_ignore_comment(source_lines[lineno - 1], codes)
+            if updated != source_lines[lineno - 1]:
+                source_lines[lineno - 1] = updated
+                changed = True
+        if changed:
+            path.write_text("".join(source_lines), encoding=encoding)
+    return check(root, selected)
+
+
+def _paint(text: str, style: str, enabled: bool) -> str:
+    if not enabled:
+        return text
+    return f"\033[{style}m{text}\033[0m"
+
+
+def _visual_column(line: str, column: int, tabsize: int = 8) -> tuple[str, int]:
+    """Expand tabs the way a terminal does, and map a 1-based source column."""
+    visual: list[str] = []
+    visual_col = 1
+    mapped = None
+    for index, char in enumerate(line, start=1):
+        if index == column:
+            mapped = visual_col
+        if char == "\t":
+            width = tabsize - (visual_col - 1) % tabsize
+            visual.append(" " * width)
+            visual_col += width
+        else:
+            visual.append(char)
+            visual_col += 1
+    return "".join(visual), mapped if mapped is not None else visual_col
+
+
+def _source_line(root: Path, finding: dict) -> str | None:
+    path = root / finding["path"]
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+    if "cell" in finding:
+        try:
+            cell = json.loads(text)["cells"][finding["cell"] - 1]
+            source = cell.get("source", "")
+            if isinstance(source, list):
+                source = "".join(source)
+            if not isinstance(source, str):
+                return None
+            lines = source.splitlines()
+        except (json.JSONDecodeError, IndexError, KeyError, TypeError, AttributeError):
+            return None
+    else:
+        lines = text.splitlines()
+    index = finding["line"] - 1
+    if not 0 <= index < len(lines):
+        return None
+    return lines[index]
+
+
+def _location(finding: dict) -> str:
+    if "cell" in finding:
+        place = f"{finding['path']}:cell {finding['cell']}:{finding['line']}:{finding['column']}"
+    else:
+        place = f"{finding['path']}:{finding['line']}:{finding['column']}"
+    return place
+
+
+def _pretty_finding(root: Path, finding: dict, color: bool) -> list[str]:
+    style = {"error": "1;31", "warning": "1;33", "review": "1;36"}.get(finding["severity"], "1")
+    label = _paint(f"{finding['severity']}[{finding['code']}]", style, color)
+    rows = [f"{label}: {finding['message']}", f"  --> {_location(finding)}"]
+    source = _source_line(root, finding)
+    if source is None:
+        rows.append(f"   = help: {finding['suggestion']}")
+        return rows
+    visual, column = _visual_column(source, finding["column"])
+    shown = visual.rstrip()
+    start = min(max(column, 1) - 1, len(shown))
+    end = max(len(shown), start + 1)
+    carets = _paint("^" * (end - start), style, color)
+    number = str(finding["line"])
+    gutter = " " * len(number)
+    rows.extend(
+        [
+            f"{gutter} |",
+            f"{number} | {shown}",
+            f"{gutter} | {' ' * start}{carets}",
+            f"{gutter} |",
+            f"{gutter} = help: {finding['suggestion']}",
+        ]
+    )
+    return rows
+
+
+def render_pretty(report: dict, *, color: bool = False) -> str:
+    lines = [
+        f"Repro Lens — {report['files_checked']} Python files and notebooks checked",
+        report["assurance"],
+        "",
+    ]
+    findings = report["findings"]
+    root = Path(report["root"])
+    if not findings:
+        lines.append("No findings from the enabled checks.")
+    for index, finding in enumerate(findings):
+        if index:
+            lines.append("")
+        lines.extend(_pretty_finding(root, finding, color))
+    if report["suppressed"]:
+        if findings:
+            lines.append("")
+        lines.append(f"Suppressed findings: {len(report['suppressed'])}")
+    return "\n".join(lines) + "\n"
+
+
+def render(report: dict, format_: str, *, color: bool = False) -> str:
     if format_ == "json":
         return json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    if format_ == "pretty" and report.get("kind") == "static_check":
+        return render_pretty(report, color=color)
     if report["kind"] != "static_check":
         lines = [f"Repro Lens: {report['status']}", report["assurance"]]
         lines += report.get("differences", [])
@@ -350,3 +510,118 @@ def render(report: dict, format_: str) -> str:
     if report["suppressed"]:
         lines.append(f"Suppressed findings: {len(report['suppressed'])}")
     return "\n".join(lines) + "\n"
+
+
+def _md_cell(value: object) -> str:
+    """Flatten a value for a GitHub-flavored Markdown table cell."""
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n")
+    return text.replace("\n", " ").replace("|", "\\|").strip() or "—"
+
+
+def _finding_location(finding: dict, prefix: str) -> str:
+    path = f"{prefix.rstrip('/')}/{finding['path']}" if prefix else finding["path"]
+    if "cell" in finding:
+        return f"{path} (cell {finding['cell']}, line {finding['line']})"
+    return f"{path}:{finding['line']}:{finding['column']}"
+
+
+def _details(summary: str, body_lines: list[str]) -> list[str]:
+    return ["<details>", f"<summary>{summary}</summary>", "", *body_lines, "", "</details>"]
+
+
+def render_step_summary(report: dict, prefix: str = "") -> str:
+    """Render a GitHub Actions job summary (`$GITHUB_STEP_SUMMARY`) for a report."""
+    kind = report.get("kind")
+    if kind == "static_check":
+        findings = report.get("findings", [])
+        lines = [
+            "## Repro Lens",
+            "",
+            _md_cell(report.get("assurance", "")),
+            "",
+            f"Checked **{report.get('files_checked', 0)}** Python files and notebooks; "
+            f"**{len(findings)}** finding{'s' if len(findings) != 1 else ''}.",
+            "",
+        ]
+        if findings:
+            lines += [
+                "| Severity | Code | Location | Message |",
+                "| --- | --- | --- | --- |",
+            ]
+            lines += [
+                "| "
+                + " | ".join(
+                    [
+                        _md_cell(finding["severity"]),
+                        _md_cell(finding["code"]),
+                        f"`{_md_cell(_finding_location(finding, prefix))}`",
+                        _md_cell(finding["message"]),
+                    ]
+                )
+                + " |"
+                for finding in findings
+            ]
+            lines.append("")
+            suggestions = [
+                f"- **{finding['code']}** (`{_md_cell(_finding_location(finding, prefix))}`): "
+                f"{_md_cell(finding['suggestion'])}"
+                for finding in findings
+            ]
+            lines.extend(_details("Finding details", suggestions))
+        else:
+            lines.append("No findings from the enabled checks.")
+        if report.get("suppressed"):
+            lines += ["", f"Suppressed findings: {len(report['suppressed'])}"]
+        return "\n".join(lines) + "\n"
+
+    if kind in {"repeatability_test", "report_comparison"}:
+        status = report.get("status", "unknown")
+        lines = [
+            f"## Repro Lens — `{_md_cell(status)}`",
+            "",
+            _md_cell(report.get("assurance", "")),
+            "",
+            "| Field | Value |",
+            "| --- | --- |",
+            f"| Status | `{_md_cell(status)}` |",
+        ]
+        if kind == "repeatability_test" and report.get("report_path"):
+            lines.append(f"| Evidence | `{_md_cell(report['report_path'])}` |")
+        if kind == "report_comparison":
+            for side in ("before", "after"):
+                info = report.get(side) or {}
+                if info.get("path"):
+                    lines.append(f"| {side.title()} | `{_md_cell(info['path'])}` |")
+        lines.append("")
+        if report.get("error"):
+            lines.extend(_details("Error", [f"```\n{report['error']}\n```"]))
+            lines.append("")
+        differences = list(report.get("differences") or [])
+        if differences:
+            body = [f"{index}. {_md_cell(item)}" for index, item in enumerate(differences, 1)]
+            lines.extend(_details("Output differences", body))
+        elif status == "matched":
+            lines.append("No output differences.")
+        elif status == "not_comparable":
+            changes = []
+            for category in ("policy_changes", "environment_changes"):
+                for name in report.get(category) or {}:
+                    changes.append(f"- {_md_cell(category)}: `{_md_cell(name)}`")
+            for change, names in (report.get("input_changes") or {}).items():
+                changes.extend(f"- Input {_md_cell(change)}: `{_md_cell(name)}`" for name in names)
+            if changes:
+                lines.extend(_details("Why reports are not comparable", changes))
+            else:
+                lines.append("Reports are not comparable.")
+        return "\n".join(lines) + "\n"
+
+    raise ValueError(f"Unsupported report kind for step summary: {kind!r}")
+
+
+def write_step_summary(report: dict, prefix: str = "") -> None:
+    """Append a job summary when running inside GitHub Actions."""
+    target = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not target:
+        return
+    with Path(target).open("a", encoding="utf-8") as handle:
+        handle.write(render_step_summary(report, prefix))
