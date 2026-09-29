@@ -1,5 +1,7 @@
 name: Repro Lens
-description: Flag ML reproducibility risks in Python code and notebooks, without running them.
+description: >-
+  Flag ML reproducibility risks in Python code and notebooks, without running them.
+  Writes GitHub annotations and a collapsible job summary when findings appear.
 author: 00200200
 branding:
   icon: repeat
@@ -37,6 +39,8 @@ runs:
         FAIL_ON: ${{ inputs.fail-on }}
         SARIF_FILE: ${{ inputs.sarif-file }}
         PYTHONPATH: ${{ github.action_path }}/src
+        # GITHUB_STEP_SUMMARY is provided by Actions; the CLI appends a markdown table
+        # with collapsible finding/diff sections when that path is set.
       run: |
         if [ -n "$PYTHON" ]; then
           run=("$PYTHON")

@@ -11,7 +11,7 @@ from pathlib import Path
 from . import __version__
 from .analysis import RULES
 from .comparison import compare_reports, render_comparison
-from .project import check, render
+from .project import check, render, write_step_summary
 from .sarif import render_sarif, to_github
 from .verify import verify
 
@@ -101,16 +101,18 @@ def main(argv=None):
         if args.command == "compare":
             report = compare_reports(args.before, args.after)
             print(render_comparison(report, args.format), end="")
+            write_step_summary(report)
             return {"matched": 0, "mismatch": 1, "not_comparable": 2}[report["status"]]
         if not args.root.is_dir():
             raise ValueError(f"Project directory does not exist: {args.root}")
         if args.command == "verify":
             report = verify(args.root)
             print(render(report, args.format), end="")
+            write_step_summary(report)
             return {"matched": 0, "mismatch": 1, "error": 2}[report["status"]]
         report = check(args.root, args.files)
+        prefix = repository_prefix(args.root)
         if args.format in {"sarif", "github"}:
-            prefix = repository_prefix(args.root)
             renderer = render_sarif if args.format == "sarif" else to_github
             output = renderer(report, prefix)
         else:
@@ -119,6 +121,7 @@ def main(argv=None):
             args.output.write_text(output, encoding="utf-8")
         else:
             print(output, end="")
+        write_step_summary(report, prefix)
         failing = {"error"} | ({"warning"} if args.fail_on == "warning" else set())
         return int(any(f["severity"] in failing for f in report["findings"]))
     except (OSError, ValueError) as exc:
