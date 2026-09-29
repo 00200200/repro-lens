@@ -29,6 +29,11 @@
 `--fail-on warning` is the default. Review items never fail the hook; choose
 `--fail-on error` when warnings should remain advisory.
 
+`--format pretty` prints a snippet with a caret under the flagged call. It is the default
+when stdout is a terminal. Pipes, `--output`, and an explicit `--format text` stay on the
+line-oriented report. Color follows the terminal: `NO_COLOR` or `FORCE_COLOR=0` leaves the
+same layout with no ANSI codes.
+
 `--format sarif` writes SARIF 2.1.0 with one rule entry per code above; errors, warnings
 and review items become SARIF `error`, `warning` and `note` results. `--format github`
 prints GitHub Actions `::error`, `::warning` and `::notice` commands. In both formats a
