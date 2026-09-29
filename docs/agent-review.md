@@ -56,6 +56,8 @@ two JSON files; it does not rerun training or read the artifact paths they conta
 JSON includes hashes of the report files, their recorded Git states, changes to input
 hashes, policy/environment changes and output differences. Text output lists changed
 input names and the fields that require review; JSON retains their before/after values.
+When recorded input SHA-256 maps differ, comparison sets `input_immutability` to
+`changed` immediately so silently edited datasets are visible before metric pairing.
 
 Input changes are expected during a refactor, so they are listed without automatically
 failing comparison. Review them: matching outputs do not establish that changed data,

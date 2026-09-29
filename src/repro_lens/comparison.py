@@ -9,10 +9,20 @@ import re
 from pathlib import Path
 
 from .json_data import loads, same_json
-from .verify import output_differences, read_verify_config
+from .verify import input_hash_changes, output_differences, read_verify_config
 
 REPORT_LIMIT = 8_000_000
-CONFIG_FIELDS = {"command", "inputs", "metrics", "artifacts", "timeout", "atol", "rtol", "result"}
+CONFIG_FIELDS = {
+    "command",
+    "inputs",
+    "metrics",
+    "artifacts",
+    "timeout",
+    "atol",
+    "rtol",
+    "result",
+    "hash-inputs",
+}
 
 
 def hash_map(value: object, field: str) -> dict:
@@ -41,7 +51,11 @@ def read_report(path: Path) -> tuple[dict, str]:
     if report.get("differences") != [] or "error" in report:
         raise ValueError(f"Matched report contains errors or missing/nonempty differences: {path}")
     original = report.get("configuration")
-    if not isinstance(original, dict) or set(original) != CONFIG_FIELDS:
+    if not isinstance(original, dict):
+        raise ValueError(f"Report must retain the complete verification configuration: {path}")
+    original = dict(original)
+    original.setdefault("hash-inputs", False)
+    if set(original) != CONFIG_FIELDS:
         raise ValueError(f"Report must retain the complete verification configuration: {path}")
     try:
         report["configuration"] = read_verify_config({"verify": original})
@@ -106,6 +120,7 @@ def compare_reports(before_path: Path, after_path: Path) -> dict:
             "before": first_runtime,
             "after": second_runtime,
         }
+    input_changes = input_hash_changes(before_inputs, after_inputs)
     report = {
         "schema_version": 1,
         "kind": "report_comparison",
@@ -126,19 +141,16 @@ def compare_reports(before_path: Path, after_path: Path) -> dict:
         },
         "policy_changes": policy_changes,
         "environment_changes": environment_changes,
-        "input_changes": {
-            "added": sorted(after_inputs.keys() - before_inputs.keys()),
-            "removed": sorted(before_inputs.keys() - after_inputs.keys()),
-            "modified": sorted(
-                name
-                for name in before_inputs.keys() & after_inputs.keys()
-                if before_inputs[name] != after_inputs[name]
-            ),
-        },
+        "input_changes": input_changes,
         "differences": [],
     }
     if report["status"] == "not_comparable":
         return report
+    if any(input_changes.values()):
+        # Surface input drift immediately before metric/artifact pairing.
+        report["input_immutability"] = "changed"
+    else:
+        report["input_immutability"] = "unchanged"
     for left, first in enumerate(before["runs"], 1):
         for right, second in enumerate(after["runs"], 1):
             report["differences"].extend(
@@ -160,5 +172,7 @@ def render_comparison(report: dict, format_: str) -> str:
             lines.append(f"{category}: {name}")
     for change, names in report["input_changes"].items():
         lines.extend(f"Input {change}: {name}" for name in names)
+    if report.get("input_immutability") == "changed":
+        lines.append("Input immutability: changed since the previous report snapshot")
     lines.extend(report["differences"])
     return "\n".join(lines) + "\n"

@@ -16,6 +16,7 @@ result = "result.json"
 timeout = 60
 atol = 1e-12
 rtol = 1e-9
+hash-inputs = true
 ```
 
 Command is an argv array, never a shell string. `{output}` is a fresh absolute directory
@@ -48,9 +49,14 @@ exact SHA-256. Undeclared metrics are not compared. Each input glob must match a
 least one file.
 
 Inputs/artifacts must remain inside their project/output roots; escaping symlinks are
-rejected. Inputs are hashed before and after each run. The runner does not prove that
-all declared inputs are consumed, track external state, or detect transient modifications
-that are restored before hashing.
+rejected. Inputs are hashed with SHA-256 (`hashlib` only) before and after each run.
+When `hash-inputs = true`, a durable snapshot is written to
+`.repro-lens/verify/inputs-sha256.json` after a successful two-run match or mismatch.
+A later `verify` compares the live hashes against that snapshot and fails if a declared
+input was added, removed or modified. The default `hash-inputs = false` still records
+per-run SHA-256 maps in the report (for `compare`) without enforcing a durable snapshot.
+The runner does not prove that all declared inputs are consumed, track external state,
+or detect transient modifications that are restored before hashing.
 
 Reports retain commands, successful exit statuses, timings, metrics, hashes, logs, Git
 commit/dirty state, runner platform and optional child runtime metadata. Failed runs

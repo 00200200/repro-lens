@@ -21,10 +21,15 @@ from pathlib import Path
 from .json_data import loads, same_json
 from .project import inside, lockfile_environment_mismatches, read_policy
 
+INPUT_SNAPSHOT_NAME = "inputs-sha256.json"
+
 
 def digest(path: Path) -> str:
+    hasher = hashlib.sha256()
     with path.open("rb") as handle:
-        return hashlib.file_digest(handle, "sha256").hexdigest()
+        while chunk := handle.read(1024 * 1024):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 
 def read_verify_config(policy: dict) -> dict:
@@ -32,7 +37,17 @@ def read_verify_config(policy: dict) -> dict:
     if not isinstance(original, dict):
         raise ValueError("Configure [tool.repro-lens.verify] before running verify")
     config = original.copy()
-    allowed = {"command", "inputs", "metrics", "artifacts", "timeout", "atol", "rtol", "result"}
+    allowed = {
+        "command",
+        "inputs",
+        "metrics",
+        "artifacts",
+        "timeout",
+        "atol",
+        "rtol",
+        "result",
+        "hash-inputs",
+    }
     if set(config) - allowed:
         raise ValueError(f"Unknown verify settings: {sorted(set(config) - allowed)}")
     for field in ("command", "inputs", "metrics", "artifacts"):
@@ -52,6 +67,9 @@ def read_verify_config(policy: dict) -> dict:
     if config["timeout"] == 0:
         raise ValueError("verify.timeout must be positive")
     config.setdefault("result", "result.json")
+    hash_inputs = config.setdefault("hash-inputs", False)
+    if type(hash_inputs) is not bool:
+        raise ValueError("verify.hash-inputs must be a boolean")
     for value in [config["result"], *config["artifacts"]]:
         if (
             not isinstance(value, str)
@@ -75,6 +93,71 @@ def input_snapshot(root: Path, patterns: list[str]) -> dict[str, str]:
             safe = inside(root, path)
             hashes[path.relative_to(root).as_posix()] = digest(safe)
     return dict(sorted(hashes.items()))
+
+
+def input_hash_changes(before: dict[str, str], after: dict[str, str]) -> dict[str, list[str]]:
+    return {
+        "added": sorted(after.keys() - before.keys()),
+        "removed": sorted(before.keys() - after.keys()),
+        "modified": sorted(
+            name for name in before.keys() & after.keys() if before[name] != after[name]
+        ),
+    }
+
+
+def input_snapshot_path(root: Path) -> Path:
+    return inside(root, root / ".repro-lens" / "verify" / INPUT_SNAPSHOT_NAME)
+
+
+def load_input_snapshot(root: Path) -> dict[str, str] | None:
+    path = input_snapshot_path(root)
+    if not path.is_file():
+        return None
+    if path.stat().st_size > 2_000_000:
+        raise ValueError(f"Input SHA-256 snapshot exceeds 2,000,000 bytes: {path}")
+    payload = loads(path.read_text(encoding="utf-8"), path)
+    if not isinstance(payload, dict) or payload.get("kind") != "input_snapshot":
+        raise ValueError(f"Expected an input_snapshot object: {path}")
+    if type(payload.get("schema_version")) is not int or payload["schema_version"] != 1:
+        raise ValueError(f"Unsupported input snapshot schema_version: {path}")
+    hashes = payload.get("inputs_sha256")
+    if not isinstance(hashes, dict) or not hashes:
+        raise ValueError(f"Input snapshot has no declared hashes: {path}")
+    if any(
+        not name
+        or not isinstance(name, str)
+        or not isinstance(digest_value, str)
+        or len(digest_value) != 64
+        or any(char not in "0123456789abcdef" for char in digest_value)
+        for name, digest_value in hashes.items()
+    ):
+        raise ValueError(f"Input snapshot must map nonempty names to SHA-256 hashes: {path}")
+    return dict(sorted(hashes.items()))
+
+
+def write_input_snapshot(root: Path, hashes: dict[str, str]) -> Path:
+    path = input_snapshot_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": 1,
+        "kind": "input_snapshot",
+        "inputs_sha256": dict(sorted(hashes.items())),
+    }
+    path.write_text(json.dumps(payload, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    return path
+
+
+def ensure_inputs_unchanged(root: Path, current: dict[str, str]) -> None:
+    previous = load_input_snapshot(root)
+    if previous is None:
+        return
+    changes = input_hash_changes(previous, current)
+    if not any(changes.values()):
+        return
+    parts = [f"Input {kind}: {', '.join(names)}" for kind, names in changes.items() if names]
+    raise ValueError(
+        "Declared inputs changed since the previous SHA-256 snapshot; " + "; ".join(parts)
+    )
 
 
 def git_state(root: Path) -> dict:
@@ -201,6 +284,8 @@ def verify(root: Path) -> dict:
                 f"P204: {lockfile_name} does not match the active environment: "
                 + "; ".join(mismatches)
             )
+        if config["hash-inputs"]:
+            ensure_inputs_unchanged(root, before)
         outputs = []
         for index in (1, 2):
             run_dir = evidence_dir / f"run-{index}"
@@ -220,6 +305,8 @@ def verify(root: Path) -> dict:
                 )
         report["differences"] = output_differences(*outputs, config)
         report["status"] = "mismatch" if report["differences"] else "matched"
+        if config["hash-inputs"]:
+            report["input_snapshot_path"] = str(write_input_snapshot(root, before))
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         report["error"] = str(exc)
     report_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")

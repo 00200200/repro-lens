@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Persist SHA-256 hashes of configured verify inputs (stdlib `hashlib` only) under `hash-inputs = true`, compare them on a later `verify` when `.repro-lens/verify/inputs-sha256.json` exists, and have `compare` report `input_immutability` when recorded input hashes differ.
 - Before verify, compare installed package versions to `uv.lock` or `poetry.lock` when present (P204), using a pure lockfile/environment check with no network access.
 - Write a GitHub Actions job summary (`$GITHUB_STEP_SUMMARY`) with a findings table and
   collapsible failure diffs for `check`, `verify` and `compare`.
