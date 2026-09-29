@@ -40,6 +40,10 @@ prints GitHub Actions `::error`, `::warning` and `::notice` commands. In both fo
 notebook finding points at the notebook file, because a cell line has no line in the
 `.ipynb` JSON; the cell and line are the start of the message.
 
+When `$GITHUB_STEP_SUMMARY` is set (as in GitHub Actions), `check`, `verify` and
+`compare` also append a markdown job summary: a findings table for static checks, and
+collapsible `<details>` sections for verify/compare output differences.
+
 See [framework coverage](frameworks.md) for R104–R115: exact APIs, primary sources,
 passing examples and limits. These rules share the CLI, hook and skill engine.
 

@@ -415,3 +415,118 @@ def render(report: dict, format_: str, *, color: bool = False) -> str:
     if report["suppressed"]:
         lines.append(f"Suppressed findings: {len(report['suppressed'])}")
     return "\n".join(lines) + "\n"
+
+
+def _md_cell(value: object) -> str:
+    """Flatten a value for a GitHub-flavored Markdown table cell."""
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n")
+    return text.replace("\n", " ").replace("|", "\\|").strip() or "—"
+
+
+def _finding_location(finding: dict, prefix: str) -> str:
+    path = f"{prefix.rstrip('/')}/{finding['path']}" if prefix else finding["path"]
+    if "cell" in finding:
+        return f"{path} (cell {finding['cell']}, line {finding['line']})"
+    return f"{path}:{finding['line']}:{finding['column']}"
+
+
+def _details(summary: str, body_lines: list[str]) -> list[str]:
+    return ["<details>", f"<summary>{summary}</summary>", "", *body_lines, "", "</details>"]
+
+
+def render_step_summary(report: dict, prefix: str = "") -> str:
+    """Render a GitHub Actions job summary (`$GITHUB_STEP_SUMMARY`) for a report."""
+    kind = report.get("kind")
+    if kind == "static_check":
+        findings = report.get("findings", [])
+        lines = [
+            "## Repro Lens",
+            "",
+            _md_cell(report.get("assurance", "")),
+            "",
+            f"Checked **{report.get('files_checked', 0)}** Python files and notebooks; "
+            f"**{len(findings)}** finding{'s' if len(findings) != 1 else ''}.",
+            "",
+        ]
+        if findings:
+            lines += [
+                "| Severity | Code | Location | Message |",
+                "| --- | --- | --- | --- |",
+            ]
+            lines += [
+                "| "
+                + " | ".join(
+                    [
+                        _md_cell(finding["severity"]),
+                        _md_cell(finding["code"]),
+                        f"`{_md_cell(_finding_location(finding, prefix))}`",
+                        _md_cell(finding["message"]),
+                    ]
+                )
+                + " |"
+                for finding in findings
+            ]
+            lines.append("")
+            suggestions = [
+                f"- **{finding['code']}** (`{_md_cell(_finding_location(finding, prefix))}`): "
+                f"{_md_cell(finding['suggestion'])}"
+                for finding in findings
+            ]
+            lines.extend(_details("Finding details", suggestions))
+        else:
+            lines.append("No findings from the enabled checks.")
+        if report.get("suppressed"):
+            lines += ["", f"Suppressed findings: {len(report['suppressed'])}"]
+        return "\n".join(lines) + "\n"
+
+    if kind in {"repeatability_test", "report_comparison"}:
+        status = report.get("status", "unknown")
+        lines = [
+            f"## Repro Lens — `{_md_cell(status)}`",
+            "",
+            _md_cell(report.get("assurance", "")),
+            "",
+            "| Field | Value |",
+            "| --- | --- |",
+            f"| Status | `{_md_cell(status)}` |",
+        ]
+        if kind == "repeatability_test" and report.get("report_path"):
+            lines.append(f"| Evidence | `{_md_cell(report['report_path'])}` |")
+        if kind == "report_comparison":
+            for side in ("before", "after"):
+                info = report.get(side) or {}
+                if info.get("path"):
+                    lines.append(f"| {side.title()} | `{_md_cell(info['path'])}` |")
+        lines.append("")
+        if report.get("error"):
+            lines.extend(_details("Error", [f"```\n{report['error']}\n```"]))
+            lines.append("")
+        differences = list(report.get("differences") or [])
+        if differences:
+            body = [f"{index}. {_md_cell(item)}" for index, item in enumerate(differences, 1)]
+            lines.extend(_details("Output differences", body))
+        elif status == "matched":
+            lines.append("No output differences.")
+        elif status == "not_comparable":
+            changes = []
+            for category in ("policy_changes", "environment_changes"):
+                for name in report.get(category) or {}:
+                    changes.append(f"- {_md_cell(category)}: `{_md_cell(name)}`")
+            for change, names in (report.get("input_changes") or {}).items():
+                changes.extend(f"- Input {_md_cell(change)}: `{_md_cell(name)}`" for name in names)
+            if changes:
+                lines.extend(_details("Why reports are not comparable", changes))
+            else:
+                lines.append("Reports are not comparable.")
+        return "\n".join(lines) + "\n"
+
+    raise ValueError(f"Unsupported report kind for step summary: {kind!r}")
+
+
+def write_step_summary(report: dict, prefix: str = "") -> None:
+    """Append a job summary when running inside GitHub Actions."""
+    target = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not target:
+        return
+    with Path(target).open("a", encoding="utf-8") as handle:
+        handle.write(render_step_summary(report, prefix))
