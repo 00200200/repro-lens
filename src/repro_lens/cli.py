@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import keyword
+import os
 import re
 import shutil
 import sys
@@ -49,6 +50,23 @@ def initialize(destination: Path, name: str):
     return destination
 
 
+def resolve_check_format(explicit: str | None, *, writing_file: bool, is_tty: bool) -> str:
+    """Use pretty on a terminal. Pipes and --output stay on the line-oriented text report."""
+    if explicit:
+        return explicit
+    if writing_file or not is_tty:
+        return "text"
+    return "pretty"
+
+
+def ansi_enabled(*, writing_file: bool, is_tty: bool) -> bool:
+    if writing_file or not is_tty:
+        return False
+    if "NO_COLOR" in os.environ or os.environ.get("FORCE_COLOR") == "0":
+        return False
+    return True
+
+
 def repository_prefix(root: Path) -> str:
     """Code scanning resolves paths from the checkout, so prefix a root inside the cwd."""
     try:
@@ -68,7 +86,9 @@ def main(argv=None):
     )
     scan.add_argument("--root", type=Path, default=Path.cwd())
     scan.add_argument(
-        "--format", choices=["text", "json", "markdown", "sarif", "github"], default="text"
+        "--format",
+        choices=["text", "pretty", "json", "markdown", "sarif", "github"],
+        help="Output style. Default: pretty on a terminal, text when piped or saved",
     )
     scan.add_argument("--output", type=Path)
     scan.add_argument("--fail-on", choices=["warning", "error"], default="warning")
@@ -109,12 +129,16 @@ def main(argv=None):
             print(render(report, args.format), end="")
             return {"matched": 0, "mismatch": 1, "error": 2}[report["status"]]
         report = check(args.root, args.files)
-        if args.format in {"sarif", "github"}:
+        writing_file = args.output is not None
+        is_tty = sys.stdout.isatty()
+        format_ = resolve_check_format(args.format, writing_file=writing_file, is_tty=is_tty)
+        if format_ in {"sarif", "github"}:
             prefix = repository_prefix(args.root)
-            renderer = render_sarif if args.format == "sarif" else to_github
+            renderer = render_sarif if format_ == "sarif" else to_github
             output = renderer(report, prefix)
         else:
-            output = render(report, args.format)
+            color = format_ == "pretty" and ansi_enabled(writing_file=writing_file, is_tty=is_tty)
+            output = render(report, format_, color=color)
         if args.output:
             args.output.write_text(output, encoding="utf-8")
         else:
