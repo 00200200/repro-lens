@@ -19,7 +19,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from .json_data import loads, same_json
-from .project import inside, read_policy
+from .project import inside, lockfile_environment_mismatches, read_policy
 
 INPUT_SNAPSHOT_NAME = "inputs-sha256.json"
 
@@ -278,6 +278,12 @@ def verify(root: Path) -> dict:
         "report_path": str(report_path),
     }
     try:
+        lockfile_name, mismatches = lockfile_environment_mismatches(root)
+        if mismatches:
+            raise ValueError(
+                f"P204: {lockfile_name} does not match the active environment: "
+                + "; ".join(mismatches)
+            )
         if config["hash-inputs"]:
             ensure_inputs_unchanged(root, before)
         outputs = []

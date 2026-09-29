@@ -23,17 +23,27 @@
 | P201 | error | A file required by this project's policy is missing |
 | P202 | error | Project configuration is invalid |
 | P203 | error | Verification inputs/configuration cannot be resolved safely |
+| P204 | error | Installed package versions do not match uv.lock or poetry.lock |
 | S901 | error | Invalid suppression, unknown rule or missing justification |
 | S902 | error | A Python file failed syntax or scope validation |
 
 `--fail-on warning` is the default. Review items never fail the hook; choose
 `--fail-on error` when warnings should remain advisory.
 
+`--format pretty` prints a snippet with a caret under the flagged call. It is the default
+when stdout is a terminal. Pipes, `--output`, and an explicit `--format text` stay on the
+line-oriented report. Color follows the terminal: `NO_COLOR` or `FORCE_COLOR=0` leaves the
+same layout with no ANSI codes.
+
 `--format sarif` writes SARIF 2.1.0 with one rule entry per code above; errors, warnings
 and review items become SARIF `error`, `warning` and `note` results. `--format github`
 prints GitHub Actions `::error`, `::warning` and `::notice` commands. In both formats a
 notebook finding points at the notebook file, because a cell line has no line in the
 `.ipynb` JSON; the cell and line are the start of the message.
+
+When `$GITHUB_STEP_SUMMARY` is set (as in GitHub Actions), `check`, `verify` and
+`compare` also append a markdown job summary: a findings table for static checks, and
+collapsible `<details>` sections for verify/compare output differences.
 
 See [framework coverage](frameworks.md) for R104–R115: exact APIs, primary sources,
 passing examples and limits. These rules share the CLI, hook and skill engine.
@@ -142,6 +152,8 @@ required-files = ["uv.lock", "docs/reproducing.md", "data/README.md"]
 exclude = ["vendor/**", "examples/intentionally_broken/**"]
 ```
 
-The checker verifies existence, not prose accuracy or lockfile consistency. Use
-`uv lock --check` for the latter. Selected files limit code scanning; CI should also
-run a full scan. Folder existence does not establish reproducibility.
+The checker verifies required-file existence, not prose accuracy. When verification is
+configured and `uv.lock` or `poetry.lock` is present, P204 compares installed package
+versions to the lockfile (packages only on one side are ignored). Selected files limit
+code scanning; CI should also run a full scan. Folder existence does not establish
+reproducibility.

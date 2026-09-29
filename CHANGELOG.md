@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Persist SHA-256 hashes of configured verify inputs (stdlib `hashlib` only) under `hash-inputs = true`, compare them on a later `verify` when `.repro-lens/verify/inputs-sha256.json` exists, and have `compare` report `input_immutability` when recorded input hashes differ.
+- Before verify, compare installed package versions to `uv.lock` or `poetry.lock` when present (P204), using a pure lockfile/environment check with no network access.
+- Write a GitHub Actions job summary (`$GITHUB_STEP_SUMMARY`) with a findings table and
+  collapsible failure diffs for `check`, `verify` and `compare`.
 - Report unseeded `numpy.random.SeedSequence()` (omitted/`None` entropy) as R102; `spawn_key=` alone still draws OS entropy for the pool.
 - Review pandas `sample()` calls without `random_state` in files that import pandas and never seed NumPy's global RNG (R115).
 - Report unseeded NumPy BitGenerator constructors (`PCG64()`, `MT19937()`, …) as R102, the same as `default_rng()`.

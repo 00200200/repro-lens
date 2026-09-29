@@ -22,7 +22,9 @@ hash-inputs = true
 Command is an argv array, never a shell string. `{output}` is a fresh absolute directory
 for each run. `{python}` is the verifier's interpreter. For another environment, use
 its reviewed interpreter or `uv run --locked --no-sync python ...` as the template does.
-Call `uv sync` first. The runner does not provision environments or constrain network.
+Call `uv sync --locked` first. Before the two runs, verify compares installed package
+versions to `uv.lock` or `poetry.lock` when either file is present (P204) and stops if
+they disagree. The runner does not provision environments or constrain network.
 
 The result JSON contains `{"metrics": {"accuracy": 0.9}}` and optionally `runtime`
 with relevant package versions. Declared metric keys must be finite numbers; boolean,
