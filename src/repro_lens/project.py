@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import fnmatch
+import importlib.metadata
 import json
 import os
+import re
 import subprocess
 import tokenize
 import tomllib
@@ -11,6 +13,8 @@ from pathlib import Path
 
 from .analysis import Finding, analyze
 from .notebooks import notebook_source
+
+LOCKFILE_NAMES = ("uv.lock", "poetry.lock")
 
 SUFFIXES = {".py", ".ipynb"}
 SKIP = {
@@ -33,6 +37,72 @@ def inside(root: Path, path: Path) -> Path:
     if not resolved.is_relative_to(root.resolve()):
         raise ValueError(f"Path escapes project: {path}")
     return resolved
+
+
+def normalize_package_name(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def find_lockfile(root: Path) -> Path | None:
+    for name in LOCKFILE_NAMES:
+        path = root / name
+        if path.is_file():
+            return path
+    return None
+
+
+def read_lockfile_versions(path: Path) -> dict[str, set[str]]:
+    """Parse uv.lock or poetry.lock into normalized name -> allowed versions."""
+    try:
+        document = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"Lockfile is not valid TOML: {path.name}: {exc}") from exc
+    packages = document.get("package")
+    if not isinstance(packages, list):
+        raise ValueError(f"Lockfile has no package table: {path.name}")
+    locked: dict[str, set[str]] = {}
+    for entry in packages:
+        if not isinstance(entry, dict):
+            raise ValueError(f"Lockfile package entry must be a table: {path.name}")
+        name, version = entry.get("name"), entry.get("version")
+        if not isinstance(name, str) or not name or not isinstance(version, str) or not version:
+            raise ValueError(f"Lockfile package entries need name and version: {path.name}")
+        locked.setdefault(normalize_package_name(name), set()).add(version)
+    return locked
+
+
+def installed_package_versions() -> dict[str, str]:
+    installed: dict[str, str] = {}
+    for distribution in importlib.metadata.distributions():
+        name = distribution.metadata.get("Name")
+        version = distribution.version
+        if isinstance(name, str) and name and isinstance(version, str) and version:
+            installed[normalize_package_name(name)] = version
+    return installed
+
+
+def lockfile_sync_mismatches(locked: dict[str, set[str]], installed: dict[str, str]) -> list[str]:
+    """Compare a lockfile map to an installed package map; ignore packages only on one side."""
+    mismatches = []
+    for name in sorted(set(locked) & set(installed)):
+        version = installed[name]
+        allowed = locked[name]
+        if version not in allowed:
+            expected = ", ".join(sorted(allowed))
+            mismatches.append(f"{name} is {version} but lockfile has {expected}")
+    return mismatches
+
+
+def lockfile_environment_mismatches(
+    root: Path, installed: dict[str, str] | None = None
+) -> tuple[str | None, list[str]]:
+    """Return (lockfile name or None, mismatch messages) for the project's lockfile."""
+    path = find_lockfile(root)
+    if path is None:
+        return None, []
+    locked = read_lockfile_versions(path)
+    packages = installed if installed is not None else installed_package_versions()
+    return path.name, lockfile_sync_mismatches(locked, packages)
 
 
 def read_policy(root: Path) -> dict:
@@ -190,6 +260,33 @@ def check(root: Path, selected: list[str] | None = None) -> dict:
                     "Correct the verification configuration or restore its inputs.",
                 )
             )
+        try:
+            lockfile_name, mismatches = lockfile_environment_mismatches(root)
+        except (ValueError, OSError) as exc:
+            findings.append(
+                Finding(
+                    "pyproject.toml",
+                    1,
+                    1,
+                    "P204",
+                    "error",
+                    str(exc),
+                    "Repair the lockfile or regenerate it with uv lock / poetry lock.",
+                )
+            )
+        else:
+            for message in mismatches:
+                findings.append(
+                    Finding(
+                        lockfile_name or "uv.lock",
+                        1,
+                        1,
+                        "P204",
+                        "error",
+                        message,
+                        "Sync the environment to the lockfile (uv sync --locked) before verify.",
+                    )
+                )
     count = 0
     for path, relative in paths_to_scan(root, selected or [], policy.get("exclude", [])):
         count += 1
