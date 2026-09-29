@@ -15,7 +15,7 @@ from .analysis import Finding, analyze
 from .frameworks import RULES as FRAMEWORK_RULES
 from .notebooks import notebook_source
 
-# Codes the scanner accepts in `# repro-lens: ignore[...]` comments.
+# Rule codes a suppression comment may list.
 SUPPRESSIBLE_CODES = {"R101", "R102", "R103", "R190", *FRAMEWORK_RULES}
 IGNORE_JUSTIFICATION = "TODO: Review reproducibility"
 _EXISTING_IGNORE = re.compile(r"#\s*repro-lens:\s*ignore")
