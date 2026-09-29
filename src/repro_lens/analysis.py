@@ -40,6 +40,7 @@ RULES = {
     "P201": "A file required by the project's own policy is missing.",
     "P202": "Project policy or experiment configuration is invalid.",
     "P203": "A configured verification input is missing or escapes the project.",
+    "P204": "Installed package versions do not match the project's lockfile.",
     "S901": "A suppression needs a known rule and a nonempty justification.",
     "S902": "Python source failed syntax or scope validation; it was not checked.",
 }

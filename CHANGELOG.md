@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Before verify, compare installed package versions to `uv.lock` or `poetry.lock` when present (P204), using a pure lockfile/environment check with no network access.
 - Write a GitHub Actions job summary (`$GITHUB_STEP_SUMMARY`) with a findings table and
   collapsible failure diffs for `check`, `verify` and `compare`.
 - Report unseeded `numpy.random.SeedSequence()` (omitted/`None` entropy) as R102; `spawn_key=` alone still draws OS entropy for the pool.
