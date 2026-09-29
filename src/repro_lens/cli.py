@@ -11,7 +11,7 @@ from pathlib import Path
 from . import __version__
 from .analysis import RULES
 from .comparison import compare_reports, render_comparison
-from .project import check, render
+from .project import add_ignores, check, render
 from .sarif import render_sarif, to_github
 from .verify import verify
 
@@ -72,6 +72,14 @@ def main(argv=None):
     )
     scan.add_argument("--output", type=Path)
     scan.add_argument("--fail-on", choices=["warning", "error"], default="warning")
+    scan.add_argument(
+        "--add-ignores",
+        action="store_true",
+        help=(
+            "Append '# repro-lens: ignore[CODE] -- TODO: Review reproducibility' "
+            "to each flagged Python call site"
+        ),
+    )
     replay = sub.add_parser(
         "verify", help="Execute the configured local experiment twice (not sandboxed)"
     )
@@ -108,7 +116,9 @@ def main(argv=None):
             report = verify(args.root)
             print(render(report, args.format), end="")
             return {"matched": 0, "mismatch": 1, "error": 2}[report["status"]]
-        report = check(args.root, args.files)
+        report = (
+            add_ignores(args.root, args.files) if args.add_ignores else check(args.root, args.files)
+        )
         if args.format in {"sarif", "github"}:
             prefix = repository_prefix(args.root)
             renderer = render_sarif if args.format == "sarif" else to_github

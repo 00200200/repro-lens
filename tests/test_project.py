@@ -103,3 +103,71 @@ def test_skill_launcher_uses_same_engine(tmp_path):
     )
     assert result.returncode == 1
     assert json.loads(result.stdout)["findings"] == check(tmp_path)["findings"]
+
+
+def test_add_ignores_appends_suppression_comments(tmp_path):
+    source = "import random\nrandom.Random()\nimport numpy as np\nnp.random.default_rng()\n"
+    (tmp_path / "train.py").write_text(source)
+    assert main(["check", "--root", str(tmp_path), "--add-ignores"]) == 0
+    updated = (tmp_path / "train.py").read_text()
+    assert (
+        "random.Random()  # repro-lens: ignore[R103] -- TODO: Review reproducibility\n" in updated
+    )
+    assert (
+        "np.random.default_rng()  # repro-lens: ignore[R102] -- TODO: Review reproducibility\n"
+        in updated
+    )
+    report = check(tmp_path)
+    assert report["findings"] == []
+    assert {f["code"] for f in report["suppressed"]} == {"R102", "R103"}
+
+
+def test_add_ignores_merges_codes_on_one_line(tmp_path):
+    (tmp_path / "train.py").write_text(
+        "import random\nimport numpy as np\nrandom.Random(); np.random.default_rng()\n"
+    )
+    assert main(["check", "--root", str(tmp_path), "--add-ignores"]) == 0
+    line = (tmp_path / "train.py").read_text().splitlines()[2]
+    assert line.endswith("# repro-lens: ignore[R102, R103] -- TODO: Review reproducibility")
+    report = check(tmp_path)
+    assert report["findings"] == []
+    assert sorted(f["code"] for f in report["suppressed"]) == ["R102", "R103"]
+
+
+def test_add_ignores_skips_notebooks_and_policy_findings(tmp_path):
+    import json as json_mod
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repro-lens]\nrequired-files=["docs/reproduce.md"]\n'
+    )
+    (tmp_path / "train.py").write_text("import random\nrandom.Random()\n")
+    notebook = {
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "metadata": {},
+        "cells": [
+            {
+                "cell_type": "code",
+                "metadata": {},
+                "source": ["import random\n", "random.Random()\n"],
+                "outputs": [],
+                "execution_count": None,
+            }
+        ],
+    }
+    (tmp_path / "demo.ipynb").write_text(json_mod.dumps(notebook))
+    before_nb = (tmp_path / "demo.ipynb").read_text()
+    assert main(["check", "--root", str(tmp_path), "--add-ignores"]) == 1
+    assert "repro-lens: ignore[R103]" in (tmp_path / "train.py").read_text()
+    assert (tmp_path / "demo.ipynb").read_text() == before_nb
+    assert [f["code"] for f in check(tmp_path)["findings"] if f["code"] == "P201"] == ["P201"]
+
+
+def test_add_ignores_is_idempotent(tmp_path):
+    path = tmp_path / "train.py"
+    path.write_text("import random\nrandom.Random()\n")
+    assert main(["check", "--root", str(tmp_path), "--add-ignores"]) == 0
+    once = path.read_text()
+    assert main(["check", "--root", str(tmp_path), "--add-ignores"]) == 0
+    assert path.read_text() == once
+    assert once.count("repro-lens: ignore") == 1

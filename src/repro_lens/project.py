@@ -3,14 +3,22 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import re
 import subprocess
 import tokenize
 import tomllib
+from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
 
 from .analysis import Finding, analyze
+from .frameworks import RULES as FRAMEWORK_RULES
 from .notebooks import notebook_source
+
+# Codes the scanner accepts in `# repro-lens: ignore[...]` comments.
+SUPPRESSIBLE_CODES = {"R101", "R102", "R103", "R190", *FRAMEWORK_RULES}
+IGNORE_JUSTIFICATION = "TODO: Review reproducibility"
+_EXISTING_IGNORE = re.compile(r"#\s*repro-lens:\s*ignore")
 
 SUFFIXES = {".py", ".ipynb"}
 SKIP = {
@@ -227,6 +235,53 @@ def check(root: Path, selected: list[str] | None = None) -> dict:
             "Framework checks cover only the APIs and conditions listed in docs/frameworks.md.",
         ],
     }
+
+
+def ignore_comment(codes: set[str]) -> str:
+    return f"# repro-lens: ignore[{', '.join(sorted(codes))}] -- {IGNORE_JUSTIFICATION}"
+
+
+def append_ignore_comment(line: str, codes: set[str]) -> str:
+    """Append a justified suppression to a source line, preserving its newline."""
+    ending = "\n" if line.endswith("\n") else ""
+    body = line[:-1] if ending else line
+    if _EXISTING_IGNORE.search(body):
+        return line
+    return f"{body.rstrip()}  {ignore_comment(codes)}{ending}"
+
+
+def add_ignores(root: Path, selected: list[str] | None = None) -> dict:
+    """Write suppression comments for active R* findings on Python call sites, then re-scan.
+
+    Notebooks and non-suppressible findings (P*/S*) are left untouched. Comments use the
+    same `# repro-lens: ignore[CODE] -- reason` form the scanner already understands.
+    """
+    root = root.resolve()
+    report = check(root, selected)
+    by_file: dict[str, dict[int, set[str]]] = defaultdict(lambda: defaultdict(set))
+    for finding in report["findings"]:
+        code = finding["code"]
+        if code not in SUPPRESSIBLE_CODES or "cell" in finding:
+            continue
+        by_file[finding["path"]][finding["line"]].add(code)
+    for relative, lines in sorted(by_file.items()):
+        path = root / relative
+        if path.suffix != ".py" or not path.is_file():
+            continue
+        with tokenize.open(path) as handle:
+            encoding = handle.encoding
+            source_lines = handle.readlines()
+        changed = False
+        for lineno, codes in sorted(lines.items()):
+            if not 1 <= lineno <= len(source_lines):
+                continue
+            updated = append_ignore_comment(source_lines[lineno - 1], codes)
+            if updated != source_lines[lineno - 1]:
+                source_lines[lineno - 1] = updated
+                changed = True
+        if changed:
+            path.write_text("".join(source_lines), encoding=encoding)
+    return check(root, selected)
 
 
 def render(report: dict, format_: str) -> str:
