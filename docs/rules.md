@@ -18,6 +18,7 @@
 | R114 | review | TensorFlow's global RNG is used in a file that never seeds it |
 | R115 | review | pandas `sample()` has no random_state in a file that never seeds NumPy |
 | R116 | review | PyTorch DataLoader uses `num_workers > 0` without `worker_init_fn` |
+| R117 | review | Hugging Face TrainingArguments omits `full_determinism=True` or `data_seed` |
 | R118 | review | Polars `sample()` has no explicit seed |
 | R119 | review | CatBoost estimator lacks explicit random_seed or random_state |
 | R120 | review | PyTorch deterministic algorithms enabled without CUBLAS_WORKSPACE_CONFIG |

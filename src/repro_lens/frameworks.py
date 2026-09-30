@@ -19,6 +19,7 @@ RULES = {
     "R114": "TensorFlow's global RNG is used, but this file never seeds it.",
     "R115": "pandas sample() has no random_state, and this file never seeds NumPy's global RNG.",
     "R116": "PyTorch DataLoader uses multiple workers without worker_init_fn.",
+    "R117": "Hugging Face TrainingArguments omits full_determinism=True or data_seed.",
     "R118": "Polars sample() has no explicit seed; review random subsampling.",
     "R120": "PyTorch deterministic algorithms are enabled without CUBLAS_WORKSPACE_CONFIG.",
 }
@@ -128,6 +129,10 @@ TRAINERS = {
         "pytorch_lightning.trainer",
         "pytorch_lightning.trainer.trainer",
     )
+}
+HF_TRAINING_ARGS = {
+    "transformers.TrainingArguments",
+    "transformers.training_args.TrainingArguments",
 }
 TF_NONDETERMINISTIC = {
     f"tensorflow.{module}.Generator.from_non_deterministic_state"
@@ -578,6 +583,34 @@ def check_trainer(node, name, emit, resolve):
         )
 
 
+def check_hf_training_args(node, name, emit, resolve):
+    """Review TrainingArguments when full_determinism is not True or data_seed is unset/None."""
+    options = Arguments.call(node, resolve=resolve)
+    full_determinism = options.get("full_determinism")
+    data_seed = options.get("data_seed")
+    # ** expansions without an explicit key leave UNKNOWN; do not guess.
+    if full_determinism is UNKNOWN or data_seed is UNKNOWN:
+        unresolved(node, name, emit)
+        return
+    full_value = constant(full_determinism)
+    if full_determinism is not MISSING and full_value is UNKNOWN:
+        unresolved(node, name, emit)
+        return
+    data_value = constant(data_seed)
+    # Non-literal data_seed expressions are accepted without evaluating them.
+    needs_determinism = full_value is not True
+    needs_data_seed = data_seed is MISSING or data_value is None
+    if needs_determinism or needs_data_seed:
+        emit(
+            node,
+            "R117",
+            f"{name} omits full_determinism=True or an explicit non-None data_seed.",
+            "Pass full_determinism=True and data_seed=<integer> (and usually seed=) so "
+            "transformers enables deterministic algorithms and pins data shuffling.",
+            "review",
+        )
+
+
 def check_algorithms(node, name, emit, resolve):
     options = Arguments.call(node, ("mode",), resolve)
     mode = options.value("mode")
@@ -675,6 +708,8 @@ def check_call(node, name, emit, resolve=None, qualified=None):
         )
     elif name in TRAINERS:
         check_trainer(node, name, emit, resolve)
+    elif name in HF_TRAINING_ARGS:
+        check_hf_training_args(node, name, emit, resolve)
     elif name == "torch.use_deterministic_algorithms":
         check_algorithms(node, name, emit, resolve)
 

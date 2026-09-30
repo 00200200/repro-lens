@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Review Hugging Face `TrainingArguments` when `full_determinism` is not explicitly
+  `True` or `data_seed` is missing/`None` (R117).
 - Review PyTorch `use_deterministic_algorithms(True)` when the file never sets
   `CUBLAS_WORKSPACE_CONFIG` via `os.environ[...]` or `os.putenv` (R120).
 - Review PyTorch `DataLoader` calls with `num_workers > 0` (or a non-literal `num_workers`) that omit `worker_init_fn` (R116).
