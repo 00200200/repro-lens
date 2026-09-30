@@ -17,6 +17,7 @@
 | R113 | review | PyTorch's global RNG is used in a file that never seeds it |
 | R114 | review | TensorFlow's global RNG is used in a file that never seeds it |
 | R115 | review | pandas `sample()` has no random_state in a file that never seeds NumPy |
+| R116 | review | PyTorch DataLoader uses `num_workers > 0` without `worker_init_fn` |
 | R118 | review | Polars `sample()` has no explicit seed |
 | R119 | review | CatBoost estimator lacks explicit random_seed or random_state |
 | R190 | review | Dynamic arguments or framework configuration prevent a decision |
@@ -45,7 +46,7 @@ When `$GITHUB_STEP_SUMMARY` is set (as in GitHub Actions), `check`, `verify` and
 `compare` also append a markdown job summary: a findings table for static checks, and
 collapsible `<details>` sections for verify/compare output differences.
 
-See [framework coverage](frameworks.md) for R104–R115: exact APIs, primary sources,
+See [framework coverage](frameworks.md) for R104–R116: exact APIs, primary sources,
 passing examples and limits. These rules share the CLI, hook and skill engine.
 
 Supported sklearn APIs are the explicit registry in `analysis.py`:

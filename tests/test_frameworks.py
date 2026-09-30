@@ -165,6 +165,49 @@ def test_pytorch_sampling_does_not_claim_missing_global_control(source, expected
 @pytest.mark.parametrize(
     "source, expected",
     [
+        ("DataLoader(dataset, num_workers=4)", [("R116", "review")]),
+        (
+            "DataLoader(dataset, batch_size=32, num_workers=2, shuffle=True)",
+            [
+                ("R116", "review"),
+                ("R106", "review"),
+            ],
+        ),
+        ("DataLoader(dataset, num_workers=1, worker_init_fn=None)", [("R116", "review")]),
+        ("DataLoader(dataset, num_workers=n)", [("R116", "review")]),
+        ("DataLoader(dataset, num_workers=workers, worker_init_fn=None)", [("R116", "review")]),
+        (
+            "DataLoader(dataset, 32, False, None, None, 4)",
+            [("R116", "review")],
+        ),
+        ("DataLoader(dataset, num_workers=4, worker_init_fn=seed_worker)", []),
+        ("DataLoader(dataset, num_workers=n, worker_init_fn=seed_worker)", []),
+        ("DataLoader(dataset, num_workers=0)", []),
+        ("DataLoader(dataset, num_workers=0, worker_init_fn=None)", []),
+        ("DataLoader(dataset)", []),
+        ("DataLoader(dataset, batch_size=32, shuffle=True, generator=rng)", []),
+        ("DataLoader(dataset, num_workers=4, shuffle=False, **options)", []),
+        ("DataLoader(dataset, shuffle=False, **options)", []),
+        ("DataLoader(dataset, **{'num_workers': 4})", [("R116", "review")]),
+        (
+            "DataLoader(dataset, **{'num_workers': 4, 'worker_init_fn': seed_worker})",
+            [],
+        ),
+        (
+            "from torch.utils.data.dataloader import DataLoader as Loader\n"
+            "Loader(dataset, num_workers=2)",
+            [("R116", "review")],
+        ),
+    ],
+)
+def test_pytorch_dataloader_workers_need_worker_init_fn(source, expected):
+    imports = "import torch\nfrom torch.utils.data import DataLoader\n"
+    assert findings(imports + source) == expected
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
         ("RandomSampler(dataset)", [("R106", "review")]),
         ("RandomSampler(dataset, generator=None)", [("R106", "review")]),
         ("RandomSampler(dataset, generator=torch.Generator())", [("R106", "review")]),
@@ -276,6 +319,7 @@ def test_lightning_namespaces_and_modes(namespace, arguments, expected):
         ("torch.utils.data", "lib.RandomSampler(data)", "R106"),
         ("torch.utils.data", "lib.WeightedRandomSampler(weights, 8)", "R106"),
         ("torch.utils.data", "lib.SubsetRandomSampler(indices)", "R106"),
+        ("torch.utils.data", "lib.DataLoader(data, num_workers=4)", "R116"),
         ("torch", "lib.backends.cudnn.benchmark = True", "R107"),
         ("tensorflow", "lib.random.Generator.from_non_deterministic_state()", "R108"),
         ("lightning.pytorch", "lib.Trainer()", "R109"),
