@@ -257,16 +257,86 @@ def test_pytorch_random_samplers_need_a_seeded_generator(source, expected):
         ("torch.backends.cudnn.deterministic = True", []),
         ("torch.use_deterministic_algorithms(False)", [("R110", "review")]),
         ("torch.use_deterministic_algorithms(mode=False)", [("R110", "review")]),
-        ("torch.use_deterministic_algorithms(True, warn_only=True)", [("R110", "review")]),
-        ("torch.use_deterministic_algorithms(True)", []),
-        ("torch.use_deterministic_algorithms(mode=True, warn_only=False)", []),
+        (
+            "torch.use_deterministic_algorithms(True, warn_only=True)",
+            [("R110", "review"), ("R120", "review")],
+        ),
+        ("torch.use_deterministic_algorithms(True)", [("R120", "review")]),
+        ("torch.use_deterministic_algorithms(mode=True, warn_only=False)", [("R120", "review")]),
         ("torch.use_deterministic_algorithms(mode=enabled)", [("R190", "review")]),
-        ("torch.use_deterministic_algorithms(True, **options)", [("R190", "review")]),
+        (
+            "torch.use_deterministic_algorithms(True, **options)",
+            [("R190", "review"), ("R120", "review")],
+        ),
         ("torch.use_deterministic_algorithms(*args)", [("R190", "review")]),
     ],
 )
 def test_pytorch_algorithm_policy(source, expected):
     assert findings("import torch\n" + source) == expected
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("torch.use_deterministic_algorithms(True)", [("R120", "review")]),
+        ("torch.use_deterministic_algorithms(mode=True)", [("R120", "review")]),
+        (
+            "os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'\n"
+            "torch.use_deterministic_algorithms(True)",
+            [],
+        ),
+        (
+            'os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"\n'
+            "torch.use_deterministic_algorithms(True)",
+            [],
+        ),
+        (
+            'os.putenv("CUBLAS_WORKSPACE_CONFIG", ":4096:8")\n'
+            "torch.use_deterministic_algorithms(True)",
+            [],
+        ),
+        (
+            "torch.use_deterministic_algorithms(True)\n"
+            'os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"',
+            [],
+        ),
+        (
+            'os.environ["OTHER"] = ":4096:8"\ntorch.use_deterministic_algorithms(True)',
+            [("R120", "review")],
+        ),
+        (
+            'os.putenv("OTHER", ":4096:8")\ntorch.use_deterministic_algorithms(True)',
+            [("R120", "review")],
+        ),
+        (
+            "from os import environ\nenviron['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'\n"
+            "torch.use_deterministic_algorithms(True)",
+            [],
+        ),
+        (
+            "from os import putenv\nputenv('CUBLAS_WORKSPACE_CONFIG', ':16:8')\n"
+            "torch.use_deterministic_algorithms(True)",
+            [],
+        ),
+        (
+            "from torch import use_deterministic_algorithms as enable\nenable(True)",
+            [("R120", "review")],
+        ),
+        (
+            "from torch import use_deterministic_algorithms as enable\n"
+            'os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"\nenable(True)',
+            [],
+        ),
+        (
+            "torch.use_deterministic_algorithms(True, warn_only=True)",
+            [("R110", "review"), ("R120", "review")],
+        ),
+        ("torch.use_deterministic_algorithms(False)", [("R110", "review")]),
+        ("torch.use_deterministic_algorithms(enabled)", [("R190", "review")]),
+    ],
+)
+def test_pytorch_cublas_workspace_with_deterministic_algorithms(source, expected):
+    assert findings("import os\nimport torch\n" + source) == expected
 
 
 @pytest.mark.parametrize(
@@ -324,6 +394,7 @@ def test_lightning_namespaces_and_modes(namespace, arguments, expected):
         ("tensorflow", "lib.random.Generator.from_non_deterministic_state()", "R108"),
         ("lightning.pytorch", "lib.Trainer()", "R109"),
         ("torch", "lib.use_deterministic_algorithms(False)", "R110"),
+        ("torch", "lib.use_deterministic_algorithms(True)", "R120"),
     ],
 )
 def test_framework_aliases_shadowing_and_justified_suppression(module, call, code):

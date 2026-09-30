@@ -20,6 +20,7 @@ RULES = {
     "R115": "pandas sample() has no random_state, and this file never seeds NumPy's global RNG.",
     "R116": "PyTorch DataLoader uses multiple workers without worker_init_fn.",
     "R118": "Polars sample() has no explicit seed; review random subsampling.",
+    "R120": "PyTorch deterministic algorithms are enabled without CUBLAS_WORKSPACE_CONFIG.",
 }
 
 MISSING = object()
@@ -590,6 +591,48 @@ def check_algorithms(node, name, emit, resolve):
             f"{name} allows operations without a deterministic implementation.",
             "Review strict mode (mode=True, warn_only=False) or justify the allowed operations "
             "and verify their outputs in the target environment.",
+            "review",
+        )
+
+
+CUBLAS_WORKSPACE = "CUBLAS_WORKSPACE_CONFIG"
+
+
+def sets_cublas_workspace(target, qualified):
+    """True when assigning to os.environ['CUBLAS_WORKSPACE_CONFIG'] (any os.environ alias)."""
+    if not isinstance(target, ast.Subscript):
+        return False
+    if qualified(target.value) != "os.environ":
+        return False
+    return constant(target.slice) == CUBLAS_WORKSPACE
+
+
+def puts_cublas_workspace(node, name):
+    """True for os.putenv('CUBLAS_WORKSPACE_CONFIG', ...) (any os.putenv alias)."""
+    if name != "os.putenv" or not node.args:
+        return False
+    return constant(node.args[0]) == CUBLAS_WORKSPACE
+
+
+def requests_deterministic_algorithms(node, name, resolve=None):
+    """True when torch.use_deterministic_algorithms is called with literal True mode."""
+    if name != "torch.use_deterministic_algorithms":
+        return False
+    return Arguments.call(node, ("mode",), resolve).value("mode") is True
+
+
+def report_cublas_workspace(calls, configured, emit):
+    """Review deterministic-algorithm enables when CUBLAS_WORKSPACE_CONFIG is unset in-file."""
+    if configured:
+        return
+    for node, name in calls:
+        emit(
+            node,
+            "R120",
+            f"{name} enables deterministic algorithms without setting "
+            f"{CUBLAS_WORKSPACE} in this file.",
+            f'Set os.environ["{CUBLAS_WORKSPACE}"] to ":4096:8" or ":16:8" before CUDA '
+            "initialization, or justify CPU-only / non-CUDA use.",
             "review",
         )
 

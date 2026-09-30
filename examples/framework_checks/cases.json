@@ -196,8 +196,8 @@
   },
   {
     "name": "PyTorch algorithm policy",
-    "before": "import torch\ntorch.use_deterministic_algorithms(True, warn_only=True)\n",
-    "after": "import torch\ntorch.use_deterministic_algorithms(True, warn_only=False)\n",
+    "before": "import os\nimport torch\nos.environ[\"CUBLAS_WORKSPACE_CONFIG\"] = \":4096:8\"\ntorch.use_deterministic_algorithms(True, warn_only=True)\n",
+    "after": "import os\nimport torch\nos.environ[\"CUBLAS_WORKSPACE_CONFIG\"] = \":4096:8\"\ntorch.use_deterministic_algorithms(True, warn_only=False)\n",
     "expected": [
       "R110",
       "review"

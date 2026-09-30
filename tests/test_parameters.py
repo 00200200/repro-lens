@@ -203,7 +203,7 @@ def test_nonlocal_assignment_is_not_treated_as_fresh_local_parameters():
         (
             "import torch\noptions = {'mode': True, 'warn_only': True}\n"
             "torch.use_deterministic_algorithms(**options)",
-            ["R110"],
+            ["R110", "R120"],
         ),
         ("import custom as xgb\nparams = {'booster': 'gblinear'}\nxgb.train(params, data)", []),
         (

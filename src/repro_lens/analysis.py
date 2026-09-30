@@ -150,6 +150,8 @@ class Scanner(ast.NodeVisitor):
         self.imports_pandas = False
         self.polars_samples = []
         self.imports_polars = False
+        self.cublas_workspace = False
+        self.deterministic_algorithms = []
         self.parameters = ParameterDictionaries(tree)
         self.function_locals = {}
         pending = [symbols]
@@ -214,6 +216,7 @@ class Scanner(ast.NodeVisitor):
         self.visit(node.value)
         for target in node.targets:
             frameworks.check_assignment(node, self.qualified(target), node.value, self.emit)
+            self.cublas_workspace |= frameworks.sets_cublas_workspace(target, self.qualified)
             for name in bound_names(target):
                 self.bindings.pop(name, None)
 
@@ -221,6 +224,7 @@ class Scanner(ast.NodeVisitor):
         if node.value:
             self.visit(node.value)
             frameworks.check_assignment(node, self.qualified(node.target), node.value, self.emit)
+            self.cublas_workspace |= frameworks.sets_cublas_workspace(node.target, self.qualified)
         for name in bound_names(node.target):
             self.bindings.pop(name, None)
 
@@ -353,6 +357,9 @@ class Scanner(ast.NodeVisitor):
             self.samples.append(node)
         if frameworks.polars_sample(node, name):
             self.polars_samples.append(node)
+        self.cublas_workspace |= frameworks.puts_cublas_workspace(node, name)
+        if frameworks.requests_deterministic_algorithms(node, name, self.parameters.resolve):
+            self.deterministic_algorithms.append((node, name))
         kwargs = {kw.arg: kw.value for kw in node.keywords if kw.arg}
         dynamic = any(kw.arg is None for kw in node.keywords) or any(
             isinstance(arg, ast.Starred) for arg in node.args
@@ -474,6 +481,9 @@ def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Fi
         frameworks.report_pandas_sample(scanner.samples, scanner.seeded, scanner.emit)
     if scanner.imports_polars:
         frameworks.report_polars_sample(scanner.polars_samples, scanner.emit)
+    frameworks.report_cublas_workspace(
+        scanner.deterministic_algorithms, scanner.cublas_workspace, scanner.emit
+    )
     suppressions = {}
     invalid = []
     for token in tokenize.generate_tokens(io.StringIO(source).readline):
