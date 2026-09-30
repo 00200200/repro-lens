@@ -145,6 +145,31 @@ it to False. Recognized namespaces: `lightning`, `lightning.pytorch`,
 `lightning.trainer`). Fabric and `seed_everything` effects are not analyzed.
 See the [Trainer 2.6.1 source contract](https://github.com/Lightning-AI/pytorch-lightning/blob/2.6.1/src/lightning/pytorch/trainer/trainer.py#L252).
 
+## Hugging Face Transformers — R117 (review)
+
+```python
+from transformers import TrainingArguments
+
+TrainingArguments(output_dir="./results")  # R117: defaults omit full_determinism.
+TrainingArguments(
+    output_dir="./results",
+    seed=42,
+    data_seed=42,
+    full_determinism=True,
+)
+```
+
+Review when `full_determinism` is not explicitly `True`, or when `data_seed` is
+omitted or set to `None`. Defaults leave `full_determinism=False` and
+`data_seed=None`, so run-to-run data order and CUDA/CPU deterministic kernels are
+not locked down. One finding covers both gaps. An explicit non-None `data_seed`
+expression is accepted without evaluating it; unknown `**` expansions are R190.
+Recognized names: `transformers.TrainingArguments` and
+`transformers.training_args.TrainingArguments`. `Trainer` construction is not
+checked separately. See
+[TrainingArguments](https://huggingface.co/docs/transformers/main_classes/trainer#transformers.TrainingArguments)
+(`full_determinism`, `data_seed`, `seed`).
+
 ## Global RNG state — R111–R114 (review)
 
 ```python

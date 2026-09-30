@@ -393,6 +393,7 @@ def test_lightning_namespaces_and_modes(namespace, arguments, expected):
         ("torch", "lib.backends.cudnn.benchmark = True", "R107"),
         ("tensorflow", "lib.random.Generator.from_non_deterministic_state()", "R108"),
         ("lightning.pytorch", "lib.Trainer()", "R109"),
+        ("transformers", "lib.TrainingArguments(output_dir='./out')", "R117"),
         ("torch", "lib.use_deterministic_algorithms(False)", "R110"),
         ("torch", "lib.use_deterministic_algorithms(True)", "R120"),
     ],
@@ -651,3 +652,76 @@ def test_framework_demo_checks_expected_results_and_detects_a_lost_warning(tmp_p
 )
 def test_catboost_seed_conditions(source, expected):
     assert findings("import catboost as cb\n" + source) == expected
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("TrainingArguments(output_dir='./results')", [("R117", "review")]),
+        (
+            "TrainingArguments(output_dir='./results', per_device_train_batch_size=16)",
+            [("R117", "review")],
+        ),
+        ("TrainingArguments(output_dir='./results', seed=42)", [("R117", "review")]),
+        (
+            "TrainingArguments(output_dir='./results', full_determinism=True)",
+            [("R117", "review")],
+        ),
+        (
+            "TrainingArguments(output_dir='./results', data_seed=42)",
+            [("R117", "review")],
+        ),
+        (
+            "TrainingArguments(output_dir='./results', full_determinism=False, data_seed=42)",
+            [("R117", "review")],
+        ),
+        (
+            "TrainingArguments(output_dir='./results', full_determinism=True, data_seed=None)",
+            [("R117", "review")],
+        ),
+        (
+            "TrainingArguments(output_dir='./results', seed=42, data_seed=42, "
+            "full_determinism=True)",
+            [],
+        ),
+        (
+            "TrainingArguments(output_dir='./results', data_seed=seed, full_determinism=True)",
+            [],
+        ),
+        (
+            "TrainingArguments(output_dir='./results', full_determinism=enabled, data_seed=42)",
+            [("R190", "review")],
+        ),
+        ("TrainingArguments(**options)", [("R190", "review")]),
+        (
+            "TrainingArguments(output_dir='./results', full_determinism=True, **options)",
+            [("R190", "review")],
+        ),
+        (
+            "TrainingArguments(**{'output_dir': './results', 'full_determinism': True, "
+            "'data_seed': 42})",
+            [],
+        ),
+        (
+            "TrainingArguments(**{'output_dir': './results', 'data_seed': 42})",
+            [("R117", "review")],
+        ),
+    ],
+)
+def test_hf_training_arguments_determinism(source, expected):
+    assert findings("from transformers import TrainingArguments\n" + source) == expected
+
+
+@pytest.mark.parametrize(
+    "prefix, call",
+    [
+        ("from transformers import TrainingArguments\n", "TrainingArguments"),
+        ("from transformers.training_args import TrainingArguments\n", "TrainingArguments"),
+        ("import transformers\n", "transformers.TrainingArguments"),
+    ],
+)
+def test_hf_training_arguments_import_paths(prefix, call):
+    good = f"{prefix}{call}(output_dir='./results', seed=1, data_seed=1, full_determinism=True)\n"
+    bad = f"{prefix}{call}(output_dir='./results')\n"
+    assert findings(good) == []
+    assert findings(bad) == [("R117", "review")]
