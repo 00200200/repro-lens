@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Review PyTorch `use_deterministic_algorithms(True)` when the file never sets
+  `CUBLAS_WORKSPACE_CONFIG` via `os.environ[...]` or `os.putenv` (R120).
 - Review PyTorch `DataLoader` calls with `num_workers > 0` (or a non-literal `num_workers`) that omit `worker_init_fn` (R116).
 - Persist SHA-256 hashes of configured verify inputs (stdlib `hashlib` only) under `hash-inputs = true`, compare them on a later `verify` when `.repro-lens/verify/inputs-sha256.json` exists, and have `compare` report `input_immutability` when recorded input hashes differ.
 - Before verify, compare installed package versions to `uv.lock` or `poetry.lock` when present (P204), using a pure lockfile/environment check with no network access.

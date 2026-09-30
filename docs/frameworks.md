@@ -55,9 +55,10 @@ Supported: `LGBMModel`, `LGBMClassifier`, `LGBMRegressor`, `LGBMRanker` in
 See [LightGBM's determinism guidance](https://lightgbm.readthedocs.io/en/stable/Parameters.html#deterministic)
 (4.7.0 documentation). Different hardware/builds/versions still need separate validation.
 
-## PyTorch — R106, R107, R110, R116
+## PyTorch — R106, R107, R110, R116, R120
 
 ```python
+import os
 import torch
 from torch.utils.data import DataLoader, RandomSampler, random_split
 
@@ -71,7 +72,10 @@ DataLoader(dataset, num_workers=4)  # R116 review: workers inherit parent RNG st
 DataLoader(dataset, num_workers=4, worker_init_fn=seed_worker)
 DataLoader(dataset, num_workers=0)
 torch.backends.cudnn.benchmark = True  # R107 warning: algorithm-selection risk.
-torch.use_deterministic_algorithms(True, warn_only=True)  # R110 review.
+torch.use_deterministic_algorithms(True, warn_only=True)  # R110 and R120 review.
+torch.use_deterministic_algorithms(True)  # R120 review: CUBLAS_WORKSPACE_CONFIG unset.
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+torch.use_deterministic_algorithms(True)  # No R120: workspace config set in this file.
 ```
 
 R106 checks `random_split`, explicitly shuffled `DataLoader` calls, and the stdlib
@@ -98,7 +102,13 @@ variable such as `worker_init_fn=fn` is enough. Unknown `**` expansions that may
 
 R107 checks direct/annotated `cudnn.benchmark = True` assignments. Dynamic values and
 later overrides are not traced. R110 reviews `use_deterministic_algorithms(False)` or
-`warn_only=True` with mode enabled. See [PyTorch reproducibility](https://docs.pytorch.org/docs/2.8/notes/randomness.html)
+`warn_only=True` with mode enabled. R120 reviews `use_deterministic_algorithms(True)`
+(including imported aliases) when the same file never assigns
+`os.environ["CUBLAS_WORKSPACE_CONFIG"]` / `os.environ['CUBLAS_WORKSPACE_CONFIG']` or calls
+`os.putenv("CUBLAS_WORKSPACE_CONFIG", ...)`. Setting the variable anywhere in the file
+is accepted; order relative to the call is not checked, and CUDA initialization timing
+is not proven. See [PyTorch reproducibility](https://docs.pytorch.org/docs/2.8/notes/randomness.html),
+[`use_deterministic_algorithms`](https://docs.pytorch.org/docs/2.8/generated/torch.use_deterministic_algorithms.html)
 and [data-loading signatures](https://docs.pytorch.org/docs/2.8/data.html) (2.8 reference).
 No CPU/GPU equivalence or worker determinism is established by these checks.
 
