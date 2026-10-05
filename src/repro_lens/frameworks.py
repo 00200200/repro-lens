@@ -22,6 +22,7 @@ RULES = {
     "R117": "Hugging Face TrainingArguments omits full_determinism=True or data_seed.",
     "R118": "Polars sample() has no explicit seed; review random subsampling.",
     "R120": "PyTorch deterministic algorithms are enabled without CUBLAS_WORKSPACE_CONFIG.",
+    "R124": "torch.cuda.manual_seed seeds only the current GPU without manual_seed_all.",
 }
 
 MISSING = object()
@@ -666,6 +667,31 @@ def report_cublas_workspace(calls, configured, emit):
             f"{CUBLAS_WORKSPACE} in this file.",
             f'Set os.environ["{CUBLAS_WORKSPACE}"] to ":4096:8" or ":16:8" before CUDA '
             "initialization, or justify CPU-only / non-CUDA use.",
+            "review",
+        )
+
+
+def is_cuda_manual_seed(name):
+    """True for torch.cuda.manual_seed (any imported alias), not manual_seed_all."""
+    return name == "torch.cuda.manual_seed"
+
+
+def is_cuda_manual_seed_all(name):
+    """True for torch.cuda.manual_seed_all (any imported alias)."""
+    return name == "torch.cuda.manual_seed_all"
+
+
+def report_cuda_manual_seed(calls, seeded_all, emit):
+    """Review cuda.manual_seed when the same file never calls cuda.manual_seed_all."""
+    if seeded_all:
+        return
+    for node, name in calls:
+        emit(
+            node,
+            "R124",
+            f"{name} seeds only the current CUDA device RNG.",
+            "Prefer torch.cuda.manual_seed_all(seed) so every visible GPU is seeded, "
+            "or justify single-GPU affinity (for example CUDA_VISIBLE_DEVICES).",
             "review",
         )
 

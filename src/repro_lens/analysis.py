@@ -152,6 +152,8 @@ class Scanner(ast.NodeVisitor):
         self.imports_polars = False
         self.cublas_workspace = False
         self.deterministic_algorithms = []
+        self.cuda_manual_seed = []
+        self.cuda_manual_seed_all = False
         self.parameters = ParameterDictionaries(tree)
         self.function_locals = {}
         pending = [symbols]
@@ -360,6 +362,9 @@ class Scanner(ast.NodeVisitor):
         self.cublas_workspace |= frameworks.puts_cublas_workspace(node, name)
         if frameworks.requests_deterministic_algorithms(node, name, self.parameters.resolve):
             self.deterministic_algorithms.append((node, name))
+        if frameworks.is_cuda_manual_seed(name):
+            self.cuda_manual_seed.append((node, name))
+        self.cuda_manual_seed_all |= frameworks.is_cuda_manual_seed_all(name)
         kwargs = {kw.arg: kw.value for kw in node.keywords if kw.arg}
         dynamic = any(kw.arg is None for kw in node.keywords) or any(
             isinstance(arg, ast.Starred) for arg in node.args
@@ -483,6 +488,9 @@ def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Fi
         frameworks.report_polars_sample(scanner.polars_samples, scanner.emit)
     frameworks.report_cublas_workspace(
         scanner.deterministic_algorithms, scanner.cublas_workspace, scanner.emit
+    )
+    frameworks.report_cuda_manual_seed(
+        scanner.cuda_manual_seed, scanner.cuda_manual_seed_all, scanner.emit
     )
     suppressions = {}
     invalid = []
