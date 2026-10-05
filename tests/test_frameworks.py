@@ -340,6 +340,59 @@ def test_pytorch_cublas_workspace_with_deterministic_algorithms(source, expected
 
 
 @pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("torch.cuda.manual_seed(42)", [("R124", "review")]),
+        ("torch.cuda.manual_seed(seed)", [("R124", "review")]),
+        ("torch.cuda.manual_seed_all(42)", []),
+        (
+            "torch.cuda.manual_seed(42)\ntorch.cuda.manual_seed_all(42)",
+            [],
+        ),
+        (
+            "torch.cuda.manual_seed_all(42)\ntorch.cuda.manual_seed(42)",
+            [],
+        ),
+        ("torch.manual_seed(42)", []),
+        ("torch.cuda.manual_seed()", [("R124", "review")]),
+        (
+            "from torch.cuda import manual_seed\nmanual_seed(42)",
+            [("R124", "review")],
+        ),
+        (
+            "from torch.cuda import manual_seed as seed_gpu\nseed_gpu(42)",
+            [("R124", "review")],
+        ),
+        (
+            "from torch.cuda import manual_seed, manual_seed_all\n"
+            "manual_seed(42)\nmanual_seed_all(42)",
+            [],
+        ),
+        (
+            "from torch.cuda import manual_seed as seed_one\n"
+            "from torch.cuda import manual_seed_all as seed_all\n"
+            "seed_one(42)\nseed_all(42)",
+            [],
+        ),
+        (
+            "import torch.cuda as cuda\ncuda.manual_seed(42)",
+            [("R124", "review")],
+        ),
+        (
+            "import torch.cuda as cuda\ncuda.manual_seed(42)\ncuda.manual_seed_all(42)",
+            [],
+        ),
+        (
+            "torch.cuda.manual_seed(42)\ntorch.cuda.manual_seed(7)",
+            [("R124", "review"), ("R124", "review")],
+        ),
+    ],
+)
+def test_pytorch_cuda_manual_seed_without_manual_seed_all(source, expected):
+    assert findings("import torch\n" + source) == expected
+
+
+@pytest.mark.parametrize(
     "namespace",
     ["random", "random.experimental", "compat.v1.random", "compat.v1.random.experimental"],
 )
@@ -396,6 +449,7 @@ def test_lightning_namespaces_and_modes(namespace, arguments, expected):
         ("transformers", "lib.TrainingArguments(output_dir='./out')", "R117"),
         ("torch", "lib.use_deterministic_algorithms(False)", "R110"),
         ("torch", "lib.use_deterministic_algorithms(True)", "R120"),
+        ("torch", "lib.cuda.manual_seed(42)", "R124"),
     ],
 )
 def test_framework_aliases_shadowing_and_justified_suppression(module, call, code):

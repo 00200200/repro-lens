@@ -55,7 +55,7 @@ Supported: `LGBMModel`, `LGBMClassifier`, `LGBMRegressor`, `LGBMRanker` in
 See [LightGBM's determinism guidance](https://lightgbm.readthedocs.io/en/stable/Parameters.html#deterministic)
 (4.7.0 documentation). Different hardware/builds/versions still need separate validation.
 
-## PyTorch — R106, R107, R110, R116, R120
+## PyTorch — R106, R107, R110, R116, R120, R124
 
 ```python
 import os
@@ -76,6 +76,10 @@ torch.use_deterministic_algorithms(True, warn_only=True)  # R110 and R120 review
 torch.use_deterministic_algorithms(True)  # R120 review: CUBLAS_WORKSPACE_CONFIG unset.
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 torch.use_deterministic_algorithms(True)  # No R120: workspace config set in this file.
+torch.cuda.manual_seed(42)  # R124 review: only the current GPU RNG is seeded.
+torch.cuda.manual_seed_all(42)  # No R124: every visible GPU is seeded.
+torch.cuda.manual_seed(42)
+torch.cuda.manual_seed_all(42)  # No R124: manual_seed_all appears in this file.
 ```
 
 R106 checks `random_split`, explicitly shuffled `DataLoader` calls, and the stdlib
@@ -107,7 +111,11 @@ later overrides are not traced. R110 reviews `use_deterministic_algorithms(False
 `os.environ["CUBLAS_WORKSPACE_CONFIG"]` / `os.environ['CUBLAS_WORKSPACE_CONFIG']` or calls
 `os.putenv("CUBLAS_WORKSPACE_CONFIG", ...)`. Setting the variable anywhere in the file
 is accepted; order relative to the call is not checked, and CUDA initialization timing
-is not proven. See [PyTorch reproducibility](https://docs.pytorch.org/docs/2.8/notes/randomness.html),
+is not proven. R124 reviews `torch.cuda.manual_seed(...)` (including imported aliases)
+when the same file never calls `torch.cuda.manual_seed_all(...)`. A `manual_seed_all`
+call anywhere in the file is accepted; order relative to `manual_seed` is not checked,
+and single-GPU affinity (`CUDA_VISIBLE_DEVICES`, `set_device`) is not inferred. See
+[PyTorch reproducibility](https://docs.pytorch.org/docs/2.8/notes/randomness.html),
 [`use_deterministic_algorithms`](https://docs.pytorch.org/docs/2.8/generated/torch.use_deterministic_algorithms.html)
 and [data-loading signatures](https://docs.pytorch.org/docs/2.8/data.html) (2.8 reference).
 No CPU/GPU equivalence or worker determinism is established by these checks.

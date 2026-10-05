@@ -22,6 +22,7 @@
 | R118 | review | Polars `sample()` has no explicit seed |
 | R119 | review | CatBoost estimator lacks explicit random_seed or random_state |
 | R120 | review | PyTorch deterministic algorithms enabled without CUBLAS_WORKSPACE_CONFIG |
+| R124 | review | `torch.cuda.manual_seed` used without `torch.cuda.manual_seed_all` |
 | R190 | review | Dynamic arguments or framework configuration prevent a decision |
 | P201 | error | A file required by this project's policy is missing |
 | P202 | error | Project configuration is invalid |
@@ -48,7 +49,7 @@ When `$GITHUB_STEP_SUMMARY` is set (as in GitHub Actions), `check`, `verify` and
 `compare` also append a markdown job summary: a findings table for static checks, and
 collapsible `<details>` sections for verify/compare output differences.
 
-See [framework coverage](frameworks.md) for R104–R120: exact APIs, primary sources,
+See [framework coverage](frameworks.md) for R104–R124: exact APIs, primary sources,
 passing examples and limits. These rules share the CLI, hook and skill engine.
 
 Supported sklearn APIs are the explicit registry in `analysis.py`:
