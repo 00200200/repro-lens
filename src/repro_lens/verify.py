@@ -32,6 +32,26 @@ def digest(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def capture_hardware_environment() -> dict:
+    """Capture hardware, OS, Python and CUDA fingerprint without importing ML frameworks."""
+    env = {
+        "runner_python": sys.version,
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+        "processor": platform.processor() or platform.machine(),
+        "cpu_count": os.cpu_count(),
+        "cuda_available": False,
+    }
+    # Check for CUDA presence via nvidia-smi or CUDA environment variables
+    cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if cuda_visible and cuda_visible.strip() not in ("-1", "none", "None", ""):
+        env["cuda_available"] = True
+    elif os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH"):
+        env["cuda_available"] = True
+    return env
+
+
 def read_verify_config(policy: dict) -> dict:
     original = policy.get("verify")
     if not isinstance(original, dict):
@@ -267,11 +287,7 @@ def verify(root: Path) -> dict:
         "root": str(root),
         "git": state,
         "inputs_sha256": before,
-        "environment": {
-            "runner_python": sys.version,
-            "platform": platform.platform(),
-            "machine": platform.machine(),
-        },
+        "environment": capture_hardware_environment(),
         "configuration": config,
         "runs": [],
         "differences": [],

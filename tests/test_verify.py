@@ -7,6 +7,7 @@ import pytest
 
 from repro_lens.cli import main
 from repro_lens.verify import (
+    capture_hardware_environment,
     digest,
     input_snapshot,
     input_snapshot_path,
@@ -347,3 +348,33 @@ def test_invalid_contracts_are_rejected(setting):
     }
     with pytest.raises(ValueError):
         read_verify_config({"verify": config})
+
+
+def test_capture_hardware_environment():
+    env = capture_hardware_environment()
+    assert "runner_python" in env
+    assert "platform" in env
+    assert "machine" in env
+    assert "processor" in env
+    assert "cpu_count" in env
+    assert "cuda_available" in env
+    assert isinstance(env["cuda_available"], bool)
+    assert isinstance(env["platform"], str) and len(env["platform"]) > 0
+
+
+def test_verify_report_retains_hardware_environment(tmp_path):
+    experiment(
+        tmp_path,
+        """
+    (out / 'result.json').write_text(json.dumps({'metrics': {'score': 0.9}}))
+    """,
+    )
+    result = verify(tmp_path)
+    assert result["status"] == "matched"
+    assert "environment" in result
+    env = result["environment"]
+    assert "runner_python" in env
+    assert "platform" in env
+    assert "machine" in env
+    assert "cuda_available" in env
+    assert "processor" in env
