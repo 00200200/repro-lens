@@ -277,6 +277,20 @@ Polars' `DataFrame.sample` and `LazyFrame.sample` draw random subsamples. Callin
 
 The receiver's type is not resolved at runtime. A call is treated as Polars sampling only when the file imports `polars`, the method is `.sample`, and the keyword arguments match Polars' signature: only keywords among `n`, `fraction`, `with_replacement`, `shuffle`, and `seed`. Positional arguments and calls in files that do not import `polars` are not flagged.
 
+## Hugging Face Datasets shuffling - R127 (review)
+
+```python
+from datasets import load_dataset
+
+dataset = load_dataset("imdb")
+dataset = dataset.shuffle()  # R127 review: no explicit seed.
+dataset = dataset.shuffle(seed=42)  # No finding.
+```
+
+Hugging Face `Dataset.shuffle` and `IterableDataset.shuffle` randomize item order. Calling `.shuffle()` without passing an explicit `seed` parameter (or passing `seed=None`) leads to non-deterministic data ordering and prevents Hugging Face disk caching across runs.
+
+The receiver's type is not resolved at runtime. A call is treated as Hugging Face dataset shuffling only when the file imports `datasets`, the method is `.shuffle`, and the call arguments match the library signature: only keywords among `seed`, `generator`, `keep_in_memory`, `load_from_cache_file`, `indices_cache_file_name`, `writer_batch_size`, `buffer_size`, and `num_proc` (or positional `seed`), with no explicit non-None seed or generator. Calls in files that do not import `datasets` are not flagged.
+
 ## Dynamic arguments and limits
 
 New framework rules resolve literal `**{...}` expansions and inline `train`/`cv`

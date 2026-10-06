@@ -606,6 +606,53 @@ def test_polars_sample_findings_are_review_items_with_locations():
     assert [(f.code, f.line) for f in suppressed] == [("R118", 4)]
 
 
+HF = "import datasets\n"
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        (HF + "dataset = dataset.shuffle()", ["R127"]),
+        (HF + "dataset.shuffle()", ["R127"]),
+        (HF + "dataset.shuffle(seed=None)", ["R127"]),
+        (HF + "dataset.shuffle(None)", ["R127"]),
+        (HF + "dataset.shuffle(buffer_size=1000)", ["R127"]),
+        (HF + "dataset.shuffle(keep_in_memory=True)", ["R127"]),
+        (HF + "dataset.shuffle(generator=None)", ["R127"]),
+        (HF + "dataset.shuffle(buffer_size=1000, seed=None)", ["R127"]),
+        (HF + "dataset.shuffle(None, None)", ["R127"]),
+        ("from datasets import load_dataset\nds = load_dataset('imdb').shuffle()", ["R127"]),
+        ("from datasets import Dataset\nds = Dataset.from_dict({}).shuffle()", ["R127"]),
+        (HF + "dataset.shuffle(seed=42)", []),
+        (HF + "dataset.shuffle(42)", []),
+        (HF + "dataset.shuffle(seed=123, buffer_size=1000)", []),
+        (HF + "dataset.shuffle(generator=gen)", []),
+        (HF + "dataset.shuffle(None, gen)", []),
+        ("dataset.shuffle()", []),
+        (HF + "dataset.shuffle(**options)", []),
+        (HF + "dataset.shuffle(*args)", []),
+        (HF + "import random\nrandom.shuffle(items)", ["R112"]),
+    ],
+)
+def test_hf_dataset_shuffle_without_seed_is_reviewed(source, expected):
+    assert [item[0] for item in findings(source)] == expected
+
+
+def test_hf_dataset_shuffle_findings_are_review_items_with_locations():
+    active, suppressed = analyze(
+        "import datasets\n\n"
+        "train = dataset.shuffle()\n"
+        "subset = dataset.shuffle()  # repro-lens: ignore[R127] -- Exploratory shuffling only.\n",
+        "split.py",
+    )
+    assert [(f.code, f.severity, f.line, f.column) for f in active] == [("R127", "review", 3, 9)]
+    assert (
+        "without an explicit seed causes non-deterministic ordering in Hugging Face Datasets"
+        in active[0].message
+    )
+    assert [(f.code, f.line) for f in suppressed] == [("R127", 4)]
+
+
 def test_pandas_sample_findings_are_review_items_with_locations():
     active, suppressed = analyze(
         "import pandas as pd\n\ntrain = frame.sample(frac=0.8)\n"

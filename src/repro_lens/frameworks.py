@@ -23,6 +23,7 @@ RULES = {
     "R118": "Polars sample() has no explicit seed; review random subsampling.",
     "R120": "PyTorch deterministic algorithms are enabled without CUBLAS_WORKSPACE_CONFIG.",
     "R124": "torch.cuda.manual_seed seeds only the current GPU without manual_seed_all.",
+    "R127": "Hugging Face dataset shuffle() has no explicit seed; review random shuffling.",
 }
 
 MISSING = object()
@@ -359,6 +360,62 @@ def report_polars_sample(calls, emit):
             "Polars.",
             "Pass seed=integer to ensure reproducible sampling in Polars pipelines. "
             "The receiver is assumed to be a Polars object because this file imports polars.",
+            "review",
+        )
+
+
+HF_DATASET_SHUFFLE_KEYWORDS = {
+    "seed",
+    "generator",
+    "keep_in_memory",
+    "load_from_cache_file",
+    "indices_cache_file_name",
+    "writer_batch_size",
+    "buffer_size",
+    "num_proc",
+}
+
+
+def hf_dataset_shuffle(node, name):
+    """Return True for a Hugging Face dataset .shuffle() call that leaves seed unset.
+
+    The receiver's type is unknown, so calls shaped like Hugging Face Datasets'
+    shuffle signature count when the file imports datasets.
+    """
+    func = node.func
+    if name is not None or not isinstance(func, ast.Attribute) or func.attr != "shuffle":
+        return False
+    if any(isinstance(arg, ast.Starred) for arg in node.args):
+        return False
+    keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+    if None in keywords:
+        return False
+    if not set(keywords) <= HF_DATASET_SHUFFLE_KEYWORDS:
+        return False
+    if node.args:
+        if len(node.args) > 6:
+            return False
+        if len(node.args) >= 2 and constant(node.args[1]) is not None:
+            return False
+        return constant(node.args[0]) is None
+    if "generator" in keywords and constant(keywords["generator"]) is not None:
+        return False
+    if "seed" in keywords:
+        return constant(keywords["seed"]) is None
+    return True
+
+
+def report_hf_dataset_shuffle(calls, emit):
+    """Emit one review item per Hugging Face dataset .shuffle() call without an explicit seed."""
+    for node in calls:
+        emit(
+            node,
+            "R127",
+            "shuffle() without an explicit seed causes non-deterministic ordering in Hugging Face "
+            "Datasets.",
+            "Pass seed=integer to ensure reproducible shuffling and enable Hugging Face's disk "
+            "caching. The receiver is assumed to be a dataset object because this file imports "
+            "datasets.",
             "review",
         )
 
