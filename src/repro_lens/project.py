@@ -12,7 +12,7 @@ from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
 
-from .analysis import Finding, analyze
+from .analysis import CustomRule, Finding, analyze
 from .frameworks import RULES as FRAMEWORK_RULES
 from .notebooks import notebook_source
 
@@ -178,9 +178,121 @@ def paths_to_scan(root: Path, selected: list[str], exclude: list[str]):
         yield path, relative
 
 
-def analyze_notebook(path: Path, relative: str) -> tuple[list[Finding], list[Finding]]:
+def _fallback_parse_rules_yaml(text: str) -> list[dict]:
+    """Basic fallback parser for .repro-lens/rules.yaml when PyYAML is unavailable."""
+    rules = []
+    current_rule = None
+    in_match = False
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        if stripped.startswith(("- id:", "- id :")):
+            if current_rule:
+                rules.append(current_rule)
+            current_rule = {
+                "id": stripped.split(":", 1)[1].strip().strip("\"'"),
+                "match": {},
+            }
+            in_match = False
+            continue
+
+        if current_rule is None:
+            continue
+
+        if stripped.startswith("id:"):
+            current_rule["id"] = stripped.split(":", 1)[1].strip().strip("\"'")
+        elif stripped.startswith("severity:"):
+            current_rule["severity"] = stripped.split(":", 1)[1].strip().strip("\"'")
+        elif stripped.startswith("message:"):
+            current_rule["message"] = stripped.split(":", 1)[1].strip().strip("\"'")
+        elif stripped.startswith("suggestion:"):
+            current_rule["suggestion"] = stripped.split(":", 1)[1].strip().strip("\"'")
+        elif stripped.startswith("match:"):
+            in_match = True
+        elif in_match and stripped.startswith("call:"):
+            current_rule["match"]["call"] = stripped.split(":", 1)[1].strip().strip("\"'")
+        elif in_match and stripped.startswith("missing_kwargs:"):
+            raw_val = stripped.split(":", 1)[1].strip()
+            if raw_val.startswith("[") and raw_val.endswith("]"):
+                items = [k.strip().strip("\"'") for k in raw_val[1:-1].split(",") if k.strip()]
+                current_rule["match"]["missing_kwargs"] = items
+
+    if current_rule:
+        rules.append(current_rule)
+    return rules
+
+
+def parse_custom_rules_yaml(text: str) -> list[CustomRule]:
+    """Parse custom rule definitions from YAML text."""
+    rules_data = None
+    try:
+        import yaml
+
+        data = yaml.safe_load(text)
+        if isinstance(data, dict):
+            rules_data = data.get("rules")
+    except ImportError:
+        pass
+
+    if rules_data is None:
+        rules_data = _fallback_parse_rules_yaml(text)
+
+    if not isinstance(rules_data, list):
+        return []
+
+    result: list[CustomRule] = []
+    for item in rules_data:
+        if not isinstance(item, dict):
+            continue
+        rule_id = str(item.get("id") or "").strip()
+        if not rule_id:
+            continue
+        msg = str(item.get("message") or f"Custom rule {rule_id} violated")
+        sev = str(item.get("severity") or "warning").lower()
+        sug = str(item.get("suggestion") or "")
+        match_spec = item.get("match") or {}
+        call = str(match_spec.get("call") or "").strip()
+        missing_kwargs = match_spec.get("missing_kwargs") or ()
+        if isinstance(missing_kwargs, str):
+            missing_kwargs = (missing_kwargs,)
+        elif isinstance(missing_kwargs, list):
+            missing_kwargs = tuple(str(k) for k in missing_kwargs)
+
+        result.append(
+            CustomRule(
+                id=rule_id,
+                message=msg,
+                severity=sev,
+                suggestion=sug,
+                call=call,
+                missing_kwargs=missing_kwargs,
+            )
+        )
+    return result
+
+
+def load_custom_rules(root: Path) -> list[CustomRule]:
+    """Load custom rule definitions from .repro-lens/rules.yaml or .repro-lens/rules.yml."""
+    for filename in ("rules.yaml", "rules.yml"):
+        rule_path = root / ".repro-lens" / filename
+        if rule_path.is_file():
+            try:
+                return parse_custom_rules_yaml(rule_path.read_text(encoding="utf-8"))
+            except Exception:
+                return []
+    return []
+
+
+def analyze_notebook(
+    path: Path,
+    relative: str,
+    custom_rules: tuple[CustomRule, ...] | list[CustomRule] = (),
+) -> tuple[list[Finding], list[Finding]]:
     source, locations, invalid = notebook_source(path.read_text(encoding="utf-8"))
-    active, ignored = analyze(source, relative)
+    active, ignored = analyze(source, relative, custom_rules=custom_rules)
 
     def in_cell(finding: Finding) -> Finding:
         if not 1 <= finding.line <= len(locations):
@@ -293,15 +405,16 @@ def check(root: Path, selected: list[str] | None = None) -> dict:
                         "Sync the environment to the lockfile (uv sync --locked) before verify.",
                     )
                 )
+    custom_rules = load_custom_rules(root)
     count = 0
     for path, relative in paths_to_scan(root, selected or [], policy.get("exclude", [])):
         count += 1
         try:
             if path.suffix == ".ipynb":
-                active, ignored = analyze_notebook(path, relative)
+                active, ignored = analyze_notebook(path, relative, custom_rules=custom_rules)
             else:
                 with tokenize.open(path) as handle:
-                    active, ignored = analyze(handle.read(), relative)
+                    active, ignored = analyze(handle.read(), relative, custom_rules=custom_rules)
             findings.extend(active)
             suppressed.extend(ignored)
         except (OSError, UnicodeError, SyntaxError, ValueError) as exc:
@@ -353,10 +466,12 @@ def add_ignores(root: Path, selected: list[str] | None = None) -> dict:
     """
     root = root.resolve()
     report = check(root, selected)
+    custom_rules = load_custom_rules(root)
+    suppressible = {*SUPPRESSIBLE_CODES, *(r.id for r in custom_rules)}
     by_file: dict[str, dict[int, set[str]]] = defaultdict(lambda: defaultdict(set))
     for finding in report["findings"]:
         code = finding["code"]
-        if code not in SUPPRESSIBLE_CODES or "cell" in finding:
+        if code not in suppressible or "cell" in finding:
             continue
         by_file[finding["path"]][finding["line"]].add(code)
     for relative, lines in sorted(by_file.items()):
