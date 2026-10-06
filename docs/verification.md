@@ -61,6 +61,12 @@ or detect transient modifications that are restored before hashing.
 Reports retain commands, successful exit statuses, timings, metrics, hashes, logs, Git
 commit/dirty state, runner platform and optional child runtime metadata. Failed runs
 retain logs and an error. Child runtime metadata is self-reported, not attested.
+Verification also audits multi-threading determinism across BLAS and OpenMP environment
+variables (`OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS`,
+`VECLIB_MAXIMUM_THREADS`, `NUMEXPR_NUM_THREADS`). If unpinned or set to dynamic values,
+it emits a warning in the verification report recommending explicit pinning (e.g.
+`export OMP_NUM_THREADS=1` or a fixed thread count) to prevent floating-point reduction
+order variations.
 
 Exit 0: matched; exit 1: mismatch; exit 2: configuration/execution error. Fresh output
 directories prevent stale metrics from hiding failure. POSIX timeouts kill the process

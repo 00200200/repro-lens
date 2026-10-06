@@ -611,6 +611,8 @@ def render(report: dict, format_: str, *, color: bool = False) -> str:
     if report["kind"] != "static_check":
         lines = [f"Repro Lens: {report['status']}", report["assurance"]]
         lines += report.get("differences", [])
+        for warning in report.get("warnings", []):
+            lines.append(f"Warning: {warning}")
         if report.get("error"):
             lines.append(report["error"])
         lines.append(f"Evidence: {report.get('report_path', '(stdout)')}")
@@ -715,6 +717,10 @@ def render_step_summary(report: dict, prefix: str = "") -> str:
         if report.get("error"):
             lines.extend(_details("Error", [f"```\n{report['error']}\n```"]))
             lines.append("")
+        warnings = list(report.get("warnings") or [])
+        if warnings:
+            body = [f"- {_md_cell(item)}" for item in warnings]
+            lines.extend(_details("Warnings", body))
         differences = list(report.get("differences") or [])
         if differences:
             body = [f"{index}. {_md_cell(item)}" for index, item in enumerate(differences, 1)]

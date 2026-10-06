@@ -111,6 +111,20 @@ def test_matched_verify_has_no_collapsible_section():
     assert "<details>" not in summary
 
 
+def test_verify_with_warnings_renders_warnings_section():
+    report = {
+        "kind": "repeatability_test",
+        "status": "matched",
+        "assurance": "Two runs only.",
+        "report_path": "/tmp/report.json",
+        "differences": [],
+        "warnings": ["Multi-threading variables unpinned: OMP_NUM_THREADS."],
+    }
+    summary = render_step_summary(report)
+    assert "<summary>Warnings</summary>" in summary
+    assert "OMP_NUM_THREADS" in summary
+
+
 def test_unsupported_kind_is_rejected():
     with pytest.raises(ValueError, match="Unsupported report kind"):
         render_step_summary({"kind": "other"})

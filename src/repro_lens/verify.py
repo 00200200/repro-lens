@@ -24,6 +24,53 @@ from .project import inside, lockfile_environment_mismatches, read_policy
 INPUT_SNAPSHOT_NAME = "inputs-sha256.json"
 
 
+THREADING_ENV_VARS = (
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+)
+
+
+def audit_threading_determinism(env: dict[str, str] | None = None) -> list[str]:
+    """Audit environment variables controlling multi-threading determinism.
+
+    Multi-threaded reductions in BLAS/OpenMP backends can introduce non-deterministic
+    floating-point roundoff errors unless thread counts are explicitly pinned.
+    """
+    environ = os.environ if env is None else env
+    warnings: list[str] = []
+    unpinned: list[str] = []
+    dynamic_or_invalid: list[tuple[str, str]] = []
+
+    for var in THREADING_ENV_VARS:
+        val = environ.get(var)
+        if val is None or not val.strip():
+            unpinned.append(var)
+        else:
+            cleaned = val.strip()
+            if not cleaned.isdigit() or int(cleaned) <= 0:
+                dynamic_or_invalid.append((var, cleaned))
+
+    for var, val in dynamic_or_invalid:
+        warnings.append(
+            f"Multi-threading variable {var}={val!r} is dynamic or invalid. "
+            f"Explicitly pin to a fixed thread count (e.g. export {var}=1) "
+            "to avoid non-deterministic floating-point reduction order."
+        )
+
+    if unpinned:
+        vars_str = ", ".join(unpinned)
+        warnings.append(
+            f"Multi-threading variables unpinned: {vars_str}. Multi-threaded BLAS/OpenMP "
+            "operations can yield non-deterministic floating-point roundoff across runs. "
+            "Recommend explicit pinning (e.g. export OMP_NUM_THREADS=1 or fixed count)."
+        )
+
+    return warnings
+
+
 def digest(path: Path) -> str:
     hasher = hashlib.sha256()
     with path.open("rb") as handle:
@@ -32,9 +79,10 @@ def digest(path: Path) -> str:
     return hasher.hexdigest()
 
 
-def capture_hardware_environment() -> dict:
+def capture_hardware_environment(env: dict[str, str] | None = None) -> dict:
     """Capture hardware, OS, Python and CUDA fingerprint without importing ML frameworks."""
-    env = {
+    environ = os.environ if env is None else env
+    captured = {
         "runner_python": sys.version,
         "python": platform.python_version(),
         "platform": platform.platform(),
@@ -42,14 +90,15 @@ def capture_hardware_environment() -> dict:
         "processor": platform.processor() or platform.machine(),
         "cpu_count": os.cpu_count(),
         "cuda_available": False,
+        "threading": {var: environ[var] for var in THREADING_ENV_VARS if var in environ},
     }
     # Check for CUDA presence via nvidia-smi or CUDA environment variables
-    cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    cuda_visible = environ.get("CUDA_VISIBLE_DEVICES")
     if cuda_visible and cuda_visible.strip() not in ("-1", "none", "None", ""):
-        env["cuda_available"] = True
-    elif os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH"):
-        env["cuda_available"] = True
-    return env
+        captured["cuda_available"] = True
+    elif environ.get("CUDA_HOME") or environ.get("CUDA_PATH"):
+        captured["cuda_available"] = True
+    return captured
 
 
 def read_verify_config(policy: dict) -> dict:
@@ -291,6 +340,7 @@ def verify(root: Path) -> dict:
         "configuration": config,
         "runs": [],
         "differences": [],
+        "warnings": audit_threading_determinism(),
         "report_path": str(report_path),
     }
     try:
