@@ -151,10 +151,25 @@ def bound_names(node):
             yield from bound_names(item)
 
 
+def _parameters_defaulting_to_none(args_node: ast.arguments) -> set[str]:
+    tainted = set()
+    pos_args = args_node.posonlyargs + args_node.args
+    num_defaults = len(args_node.defaults)
+    if num_defaults > 0:
+        for arg, default in zip(pos_args[-num_defaults:], args_node.defaults, strict=True):
+            if isinstance(default, ast.Constant) and default.value is None:
+                tainted.add(arg.arg)
+    for arg, default in zip(args_node.kwonlyargs, args_node.kw_defaults, strict=True):
+        if default is not None and isinstance(default, ast.Constant) and default.value is None:
+            tainted.add(arg.arg)
+    return tainted
+
+
 class Scanner(ast.NodeVisitor):
     def __init__(self, path, symbols, tree, custom_rules: tuple[CustomRule, ...] = ()):
         self.path = path
         self.bindings = {}
+        self.none_tainted = set()
         # Methods, lambdas and comprehension expressions skip class bodies (LEGB).
         self.code_bindings = self.bindings
         self.class_depth = 0
@@ -262,19 +277,35 @@ class Scanner(ast.NodeVisitor):
 
     def visit_Assign(self, node):
         self.visit(node.value)
+        is_none = (isinstance(node.value, ast.Constant) and node.value.value is None) or (
+            isinstance(node.value, ast.Name) and node.value.id in self.none_tainted
+        )
         for target in node.targets:
             frameworks.check_assignment(node, self.qualified(target), node.value, self.emit)
             self.cublas_workspace |= frameworks.sets_cublas_workspace(target, self.qualified)
             for name in bound_names(target):
                 self.bindings.pop(name, None)
+                if is_none:
+                    self.none_tainted.add(name)
+                else:
+                    self.none_tainted.discard(name)
 
     def visit_AnnAssign(self, node):
         if node.value:
             self.visit(node.value)
             frameworks.check_assignment(node, self.qualified(node.target), node.value, self.emit)
             self.cublas_workspace |= frameworks.sets_cublas_workspace(node.target, self.qualified)
+            is_none = (isinstance(node.value, ast.Constant) and node.value.value is None) or (
+                isinstance(node.value, ast.Name) and node.value.id in self.none_tainted
+            )
+        else:
+            is_none = False
         for name in bound_names(node.target):
             self.bindings.pop(name, None)
+            if is_none:
+                self.none_tainted.add(name)
+            else:
+                self.none_tainted.discard(name)
 
     def visit_NamedExpr(self, node):
         self.visit(node.value)
@@ -354,6 +385,13 @@ class Scanner(ast.NodeVisitor):
                 self.visit(default)
         self.bindings.pop(node.name, None)
         saved = self._enter_code_scope(self._enclosing_code())
+        saved_tainted = self.none_tainted.copy()
+        new_tainted = _parameters_defaulting_to_none(node.args)
+        self.none_tainted.update(new_tainted)
+        for argument in ast.iter_child_nodes(node.args):
+            if isinstance(argument, ast.arg) and argument.arg not in new_tainted:
+                self.none_tainted.discard(argument.arg)
+
         # The compiler distinguishes this function's locals from bindings in nested scopes.
         # Locals shadow outer imports throughout the function, even before assignment.
         parameters = frozenset(
@@ -364,6 +402,7 @@ class Scanner(ast.NodeVisitor):
             self.bindings.pop(name, None)
         for statement in node.body:
             self.visit(statement)
+        self.none_tainted = saved_tainted
         self._leave_code_scope(saved)
 
     visit_AsyncFunctionDef = visit_FunctionDef
@@ -389,10 +428,16 @@ class Scanner(ast.NodeVisitor):
             if default is not None:
                 self.visit(default)
         saved = self._enter_code_scope(self._enclosing_code())
+        saved_tainted = self.none_tainted.copy()
+        new_tainted = _parameters_defaulting_to_none(node.args)
+        self.none_tainted.update(new_tainted)
         for argument in ast.iter_child_nodes(node.args):
             if isinstance(argument, ast.arg):
                 self.bindings.pop(argument.arg, None)
+                if argument.arg not in new_tainted:
+                    self.none_tainted.discard(argument.arg)
         self.visit(node.body)
+        self.none_tainted = saved_tainted
         self._leave_code_scope(saved)
 
     def visit_Call(self, node):
@@ -432,7 +477,11 @@ class Scanner(ast.NodeVisitor):
                     self.check_seed(node, name, seed, dynamic, "R101")
                 elif shuffle is False and early_stopping is False:
                     pass
-                elif seed is None or literal(seed) is None:
+                elif (
+                    seed is None
+                    or literal(seed) is None
+                    or (isinstance(seed, ast.Name) and seed.id in self.none_tainted)
+                ):
                     self.emit(
                         node,
                         "R190",
@@ -455,7 +504,11 @@ class Scanner(ast.NodeVisitor):
             ):
                 # Centroid arrays are deterministic; a callable or variable cannot be decided.
                 seed = kwargs.get("random_state")
-                if seed is None or literal(seed) is None:
+                if (
+                    seed is None
+                    or literal(seed) is None
+                    or (isinstance(seed, ast.Name) and seed.id in self.none_tainted)
+                ):
                     self.emit(
                         node,
                         "R190",
@@ -502,8 +555,9 @@ class Scanner(ast.NodeVisitor):
 
     def check_seed(self, node, name, seed, dynamic, code):
         if seed is not None and literal(seed) is not None:
-            # An explicit expression is accepted, not proven to be a valid seeded RNG.
-            return
+            if not (isinstance(seed, ast.Name) and seed.id in self.none_tainted):
+                # An explicit expression is accepted, not proven to be a valid seeded RNG.
+                return
         if dynamic and seed is None:
             self.emit(
                 node,
