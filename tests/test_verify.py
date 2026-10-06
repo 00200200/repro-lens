@@ -7,6 +7,8 @@ import pytest
 
 from repro_lens.cli import main
 from repro_lens.verify import (
+    THREADING_ENV_VARS,
+    audit_threading_determinism,
     capture_hardware_environment,
     digest,
     input_snapshot,
@@ -378,3 +380,47 @@ def test_verify_report_retains_hardware_environment(tmp_path):
     assert "machine" in env
     assert "cuda_available" in env
     assert "processor" in env
+    assert "threading" in env
+
+
+def test_audit_threading_determinism_all_pinned():
+    env = {var: "1" for var in THREADING_ENV_VARS}
+    warnings = audit_threading_determinism(env)
+    assert warnings == []
+
+
+def test_audit_threading_determinism_unpinned():
+    warnings = audit_threading_determinism({})
+    assert len(warnings) == 1
+    assert "OMP_NUM_THREADS" in warnings[0]
+    assert "MKL_NUM_THREADS" in warnings[0]
+    assert "OPENBLAS_NUM_THREADS" in warnings[0]
+    assert "VECLIB_MAXIMUM_THREADS" in warnings[0]
+    assert "NUMEXPR_NUM_THREADS" in warnings[0]
+    assert "Recommend explicit pinning" in warnings[0]
+
+
+def test_audit_threading_determinism_dynamic_or_invalid():
+    env = {
+        "OMP_NUM_THREADS": "dynamic",
+        "MKL_NUM_THREADS": "0",
+        "OPENBLAS_NUM_THREADS": "-2",
+        "VECLIB_MAXIMUM_THREADS": "4",
+        "NUMEXPR_NUM_THREADS": "2",
+    }
+    warnings = audit_threading_determinism(env)
+    assert any("OMP_NUM_THREADS='dynamic'" in w for w in warnings)
+    assert any("MKL_NUM_THREADS='0'" in w for w in warnings)
+    assert any("OPENBLAS_NUM_THREADS='-2'" in w for w in warnings)
+
+
+def test_verify_report_retains_warnings(tmp_path):
+    experiment(
+        tmp_path,
+        """
+    (out / 'result.json').write_text(json.dumps({'metrics': {'score': 0.9}}))
+    """,
+    )
+    result = verify(tmp_path)
+    assert "warnings" in result
+    assert isinstance(result["warnings"], list)
