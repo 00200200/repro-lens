@@ -581,3 +581,64 @@ def test_decorator_finding_keeps_location_and_suppression():
     active, suppressed = analyze(source, "train.py")
     assert active == []
     assert [(item.code, item.line, item.column) for item in suppressed] == [("R102", 2, 12)]
+
+
+def test_taint_tracking_flags_estimator_with_none_default():
+    source = (
+        "from sklearn.ensemble import RandomForestClassifier\n"
+        "def make_model(seed=None):\n"
+        "    return RandomForestClassifier(random_state=seed)\n"
+    )
+    assert codes(source) == ["R101"]
+
+
+def test_taint_tracking_accepts_non_none_defaults_and_required_params():
+    source_default = (
+        "from sklearn.ensemble import RandomForestClassifier\n"
+        "def make_model(seed=42):\n"
+        "    return RandomForestClassifier(random_state=seed)\n"
+    )
+    assert codes(source_default) == []
+
+    source_required = (
+        "from sklearn.ensemble import RandomForestClassifier\n"
+        "def make_model(seed):\n"
+        "    return RandomForestClassifier(random_state=seed)\n"
+    )
+    assert codes(source_required) == []
+
+
+def test_taint_tracking_clears_on_reassignment():
+    source = (
+        "from sklearn.ensemble import RandomForestClassifier\n"
+        "def make_model(seed=None):\n"
+        "    seed = 42\n"
+        "    return RandomForestClassifier(random_state=seed)\n"
+    )
+    assert codes(source) == []
+
+
+def test_taint_tracking_module_and_keyword_only_parameters():
+    source_kwonly = (
+        "from sklearn.ensemble import RandomForestClassifier\n"
+        "def make_model(*, seed=None):\n"
+        "    return RandomForestClassifier(random_state=seed)\n"
+    )
+    assert codes(source_kwonly) == ["R101"]
+
+    source_module = (
+        "from sklearn.ensemble import RandomForestClassifier\n"
+        "seed = None\n"
+        "RandomForestClassifier(random_state=seed)\n"
+    )
+    assert codes(source_module) == ["R101"]
+
+
+def test_taint_tracking_numpy_and_random_generators():
+    source_numpy = (
+        "import numpy as np\ndef make_rng(seed=None):\n    return np.random.default_rng(seed)\n"
+    )
+    assert codes(source_numpy) == ["R102"]
+
+    source_random = "import random\ndef make_rand(x=None):\n    return random.Random(x)\n"
+    assert codes(source_random) == ["R103"]
