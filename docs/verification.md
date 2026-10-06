@@ -95,3 +95,26 @@ accuracy = { max_std = 0.02, min_mean = 0.85 }
 
 If any metric violates its stability bounds, `verify` exits with code 1 (`unstable`) and details the variance failure in the report and `$GITHUB_STEP_SUMMARY`. If all metrics pass, it exits with code 0 (`stable`).
 
+## Containerized sandbox replay mode (`--sandbox`)
+
+To verify experiments in an isolated container without polluting the host machine or executing untrusted code directly on the host, use the `--sandbox` flag:
+
+```bash
+repro-lens verify --sandbox docker
+repro-lens verify --sandbox podman --sandbox-image python:3.11-slim
+```
+
+Or configure sandbox execution in `pyproject.toml`:
+
+```toml
+[tool.repro-lens.verify]
+sandbox = "docker"
+sandbox-image = "python:3.11-slim"
+```
+
+When sandbox execution is active:
+1. The project directory is mounted inside the container at `/workspace`.
+2. Experiment output and results are written directly to the mounted evidence directory.
+3. Threading determinism environment variables (`OMP_NUM_THREADS`, etc.) and seed settings are forwarded to the container.
+4. The container engine executable (`docker` or `podman`) must be present on `PATH`.
+

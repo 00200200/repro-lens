@@ -597,3 +597,95 @@ def test_multi_seed_step_summary(tmp_path):
     assert "Metric Stability Across Seeds" in summary
     assert "| `accuracy` | 0.95 | 0.01 | 0.0001 | 0.94 | 0.96 |" in summary
     assert "All metrics satisfied stability bounds." in summary
+
+
+def test_read_verify_config_sandbox_validation():
+    base = {
+        "command": ["{python}", "train.py", "{output}"],
+        "inputs": ["train.py"],
+        "metrics": ["score"],
+    }
+    # Valid docker
+    cfg = read_verify_config(
+        {"verify": {**base, "sandbox": "docker", "sandbox-image": "custom:1.0"}}
+    )
+    assert cfg["sandbox"] == "docker"
+    assert cfg["sandbox-image"] == "custom:1.0"
+
+    # Valid podman
+    cfg2 = read_verify_config({"verify": {**base, "sandbox": "podman"}})
+    assert cfg2["sandbox"] == "podman"
+    assert cfg2["sandbox-image"] is None
+
+    # Invalid engine
+    with pytest.raises(ValueError, match="verify.sandbox must be 'docker' or 'podman'"):
+        read_verify_config({"verify": {**base, "sandbox": "containerd"}})
+
+    # Invalid empty image
+    with pytest.raises(ValueError, match="verify.sandbox-image must be a nonempty string"):
+        read_verify_config({"verify": {**base, "sandbox-image": ""}})
+
+
+def test_sandbox_missing_binary_raises(tmp_path, monkeypatch):
+    from repro_lens.verify import execute
+
+    monkeypatch.setattr("shutil.which", lambda _: None)
+    with pytest.raises(ValueError, match="Sandbox engine 'docker' not found in PATH"):
+        execute(
+            ["python3", "train.py", "{output}"],
+            tmp_path,
+            tmp_path / "run-1",
+            timeout=10,
+            sandbox="docker",
+        )
+
+
+def test_sandbox_execution_and_reporting(tmp_path, monkeypatch):
+    import subprocess
+
+    from repro_lens.project import render
+    from repro_lens.verify import verify
+
+    experiment(
+        tmp_path,
+        """
+    (out / 'result.json').write_text(json.dumps({'metrics': {'score': 0.95}}))
+    """,
+    )
+
+    # Mock subprocess.Popen and shutil.which
+    monkeypatch.setattr("shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+
+    captured_cmds = []
+    orig_popen = subprocess.Popen
+
+    def mock_popen(argv, *args, **kwargs):
+        if argv and argv[0] == "docker":
+            captured_cmds.append(argv)
+            for arg in argv:
+                if "/workspace/.repro-lens/verify" in arg:
+                    rel_part = arg.replace("/workspace/", "")
+                    out_path = tmp_path / rel_part
+                    out_path.mkdir(parents=True, exist_ok=True)
+                    (out_path / "result.json").write_text(json.dumps({"metrics": {"score": 0.95}}))
+            return orig_popen(["python3", "-c", "import sys; sys.exit(0)"], *args, **kwargs)
+        return orig_popen(argv, *args, **kwargs)
+
+    monkeypatch.setattr("subprocess.Popen", mock_popen)
+
+    res = verify(tmp_path, sandbox="docker", sandbox_image="python:3.11-slim")
+    assert res["status"] == "matched"
+    assert res["sandbox"] == "docker"
+    assert res["sandbox_image"] == "python:3.11-slim"
+    assert len(captured_cmds) == 2
+    for cmd in captured_cmds:
+        assert cmd[0] == "docker"
+        assert cmd[1] == "run"
+        assert "--rm" in cmd
+        assert f"{tmp_path.resolve()}:/workspace" in cmd[cmd.index("-v") + 1]
+        assert "python:3.11-slim" in cmd
+
+    rendered = render(res, "text")
+    assert "Sandbox: docker (python:3.11-slim)" in rendered
+    summary = render_step_summary(res)
+    assert "| Sandbox | `docker` (`python:3.11-slim`) |" in summary
