@@ -6,10 +6,13 @@ from pathlib import Path
 import pytest
 
 from repro_lens.cli import main
+from repro_lens.project import render_step_summary
 from repro_lens.verify import (
     THREADING_ENV_VARS,
     audit_threading_determinism,
     capture_hardware_environment,
+    check_stability_bounds,
+    compute_metric_statistics,
     digest,
     input_snapshot,
     input_snapshot_path,
@@ -424,3 +427,173 @@ def test_verify_report_retains_warnings(tmp_path):
     result = verify(tmp_path)
     assert "warnings" in result
     assert isinstance(result["warnings"], list)
+
+
+def test_compute_metric_statistics():
+    empty_stats = compute_metric_statistics([])
+    assert empty_stats["count"] == 0
+    assert empty_stats["mean"] == 0.0
+
+    single_stats = compute_metric_statistics([42.0])
+    assert single_stats["count"] == 1
+    assert single_stats["mean"] == 42.0
+    assert single_stats["variance"] == 0.0
+    assert single_stats["std"] == 0.0
+
+    stats = compute_metric_statistics([1.0, 2.0, 3.0, 4.0, 5.0])
+    assert stats["count"] == 5
+    assert stats["mean"] == 3.0
+    assert stats["variance"] == 2.5
+    assert abs(stats["std"] - 1.581139) < 1e-5
+    assert stats["min"] == 1.0
+    assert stats["max"] == 5.0
+
+
+def test_check_stability_bounds():
+    stats = {
+        "accuracy": {"mean": 0.88, "std": 0.015, "variance": 0.000225},
+        "loss": {"mean": 0.35, "std": 0.05, "variance": 0.0025},
+    }
+    # Within bounds
+    failures = check_stability_bounds(
+        stats,
+        {"accuracy": {"max_std": 0.02, "min_mean": 0.85}, "loss": {"max_mean": 0.50}},
+    )
+    assert failures == []
+
+    # Exceeding std
+    failures = check_stability_bounds(stats, {"accuracy": {"max_std": 0.01}})
+    assert len(failures) == 1
+    assert "accuracy" in failures[0]
+    assert "exceeds max_std" in failures[0]
+
+    # Below min_mean
+    failures = check_stability_bounds(stats, {"accuracy": {"min_mean": 0.90}})
+    assert len(failures) == 1
+    assert "below min_mean" in failures[0]
+
+
+def test_multi_seed_verification_stable(tmp_path):
+    (tmp_path / "train.py").write_text(
+        textwrap.dedent("""
+        import json, os, sys
+        from pathlib import Path
+        out = Path(sys.argv[1])
+        seed = int(os.environ.get("SEED", sys.argv[2] if len(sys.argv) > 2 else "0"))
+        # Slight variation across seeds
+        score = 0.90 + (seed % 5) * 0.001
+        (out / 'result.json').write_text(json.dumps({'metrics': {'score': score}}))
+    """)
+    )
+    (tmp_path / "pyproject.toml").write_text("""
+[tool.repro-lens.verify]
+command = ["{python}", "train.py", "{output}", "{seed}"]
+inputs = ["train.py", "pyproject.toml"]
+metrics = ["score"]
+artifacts = []
+
+[tool.repro-lens.verify.stability]
+score = { max_std = 0.05, min_mean = 0.85 }
+""")
+    result = verify(tmp_path, seeds=[42, 43, 44])
+    assert result["status"] == "stable"
+    assert result["kind"] == "multi_seed_verification"
+    assert result["seeds"] == [42, 43, 44]
+    assert len(result["runs"]) == 3
+    assert result["stability_failures"] == []
+    assert "score" in result["statistics"]
+    assert result["statistics"]["score"]["count"] == 3
+
+
+def test_multi_seed_verification_unstable(tmp_path):
+    (tmp_path / "train.py").write_text(
+        textwrap.dedent("""
+        import json, os, sys
+        from pathlib import Path
+        out = Path(sys.argv[1])
+        seed = int(os.environ.get("SEED", sys.argv[2] if len(sys.argv) > 2 else "0"))
+        # High variance across seeds
+        score = 0.50 if seed == 42 else 0.95
+        (out / 'result.json').write_text(json.dumps({'metrics': {'score': score}}))
+    """)
+    )
+    (tmp_path / "pyproject.toml").write_text("""
+[tool.repro-lens.verify]
+command = ["{python}", "train.py", "{output}", "{seed}"]
+inputs = ["train.py", "pyproject.toml"]
+metrics = ["score"]
+artifacts = []
+
+[tool.repro-lens.verify.stability]
+score = { max_std = 0.05 }
+""")
+    result = verify(tmp_path, seeds=[42, 43])
+    assert result["status"] == "unstable"
+    assert len(result["stability_failures"]) == 1
+    assert "exceeds max_std" in result["stability_failures"][0]
+
+
+def test_cli_multi_seed_verify(tmp_path, capsys):
+    (tmp_path / "train.py").write_text(
+        textwrap.dedent("""
+        import json, os, sys
+        from pathlib import Path
+        out = Path(sys.argv[1])
+        seed = int(os.environ.get("SEED", "0"))
+        score = 0.88 + seed * 0.001
+        (out / 'result.json').write_text(json.dumps({'metrics': {'score': score}}))
+    """)
+    )
+    (tmp_path / "pyproject.toml").write_text("""
+[tool.repro-lens.verify]
+command = ["{python}", "train.py", "{output}"]
+inputs = ["train.py", "pyproject.toml"]
+metrics = ["score"]
+artifacts = []
+
+[tool.repro-lens.verify.stability]
+score = { max_std = 0.10 }
+""")
+    # Stable run
+    code = main(["verify", "--root", str(tmp_path), "--seeds", "1,2,3"])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "Repro Lens: stable" in captured.out
+    assert "Metric 'score'" in captured.out
+
+    # Invalid seeds format
+    err_code = main(["verify", "--root", str(tmp_path), "--seeds", "abc,def"])
+    assert err_code == 2
+    captured = capsys.readouterr()
+    assert "Invalid --seeds format" in captured.err
+
+    # Fewer than 2 seeds
+    err_code = main(["verify", "--root", str(tmp_path), "--seeds", "42"])
+    assert err_code == 2
+    captured = capsys.readouterr()
+    assert "requires at least 2 seeds" in captured.err
+
+
+def test_multi_seed_step_summary(tmp_path):
+    report = {
+        "kind": "multi_seed_verification",
+        "status": "stable",
+        "assurance": "Test assurance",
+        "seeds": [1, 2, 3],
+        "statistics": {
+            "accuracy": {
+                "count": 3,
+                "mean": 0.95,
+                "std": 0.01,
+                "variance": 0.0001,
+                "min": 0.94,
+                "max": 0.96,
+            }
+        },
+        "stability_failures": [],
+    }
+    summary = render_step_summary(report)
+    assert "## Repro Lens — `stable`" in summary
+    assert "Metric Stability Across Seeds" in summary
+    assert "| `accuracy` | 0.95 | 0.01 | 0.0001 | 0.94 | 0.96 |" in summary
+    assert "All metrics satisfied stability bounds." in summary
