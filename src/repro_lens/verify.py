@@ -118,6 +118,8 @@ def read_verify_config(policy: dict) -> dict:
         "result",
         "hash-inputs",
         "stability",
+        "sandbox",
+        "sandbox-image",
     }
     if set(config) - allowed:
         raise ValueError(f"Unknown verify settings: {sorted(set(config) - allowed)}")
@@ -154,6 +156,14 @@ def read_verify_config(policy: dict) -> dict:
                 raise ValueError(f"verify.stability.{metric_name}.{key} must be a finite number")
             if key in ("max_std", "max_variance") and val < 0:
                 raise ValueError(f"verify.stability.{metric_name}.{key} must be nonnegative")
+    sandbox = config.setdefault("sandbox", None)
+    if sandbox is not None and sandbox not in ("docker", "podman"):
+        raise ValueError(f"verify.sandbox must be 'docker' or 'podman', got {sandbox!r}")
+    sandbox_image = config.setdefault("sandbox-image", None)
+    if sandbox_image is not None and (
+        not isinstance(sandbox_image, str) or not sandbox_image.strip()
+    ):
+        raise ValueError("verify.sandbox-image must be a nonempty string")
     for value in [config["result"], *config["artifacts"]]:
         if (
             not isinstance(value, str)
@@ -262,15 +272,60 @@ def git_state(root: Path) -> dict:
 
 
 def execute(
-    command: list[str], root: Path, run_dir: Path, timeout: float, seed: int | None = None
+    command: list[str],
+    root: Path,
+    run_dir: Path,
+    timeout: float,
+    seed: int | None = None,
+    sandbox: str | None = None,
+    sandbox_image: str | None = None,
 ) -> dict:
-    run_dir.mkdir()
-    argv = [
-        arg.replace("{output}", str(run_dir))
-        .replace("{python}", sys.executable)
-        .replace("{seed}", str(seed) if seed is not None else "")
-        for arg in command
-    ]
+    run_dir.mkdir(parents=True, exist_ok=True)
+    image: str | None = None
+    if sandbox is not None:
+        import shutil
+
+        if not shutil.which(sandbox):
+            raise ValueError(f"Sandbox engine {sandbox!r} not found in PATH")
+
+        image = sandbox_image or f"python:{platform.python_version()}-slim"
+        try:
+            rel_run_dir = run_dir.resolve().relative_to(root.resolve()).as_posix()
+            container_run_dir = f"/workspace/{rel_run_dir}"
+        except ValueError:
+            container_run_dir = "/output"
+
+        argv_container = [
+            arg.replace("{output}", container_run_dir)
+            .replace("{python}", "python3")
+            .replace("{seed}", str(seed) if seed is not None else "")
+            for arg in command
+        ]
+
+        argv = [
+            sandbox,
+            "run",
+            "--rm",
+            "-v",
+            f"{root.resolve()}:/workspace",
+            "-w",
+            "/workspace",
+        ]
+        if container_run_dir == "/output":
+            argv.extend(["-v", f"{run_dir.resolve()}:/output"])
+        if seed is not None:
+            argv.extend(["-e", f"SEED={seed}"])
+        for var in THREADING_ENV_VARS:
+            if var in os.environ:
+                argv.extend(["-e", f"{var}={os.environ[var]}"])
+        argv.extend([image, *argv_container])
+    else:
+        argv = [
+            arg.replace("{output}", str(run_dir))
+            .replace("{python}", sys.executable)
+            .replace("{seed}", str(seed) if seed is not None else "")
+            for arg in command
+        ]
     start = time.monotonic()
     env = os.environ.copy()
     if seed is not None:
@@ -297,6 +352,9 @@ def execute(
     }
     if seed is not None:
         evidence["seed"] = seed
+    if sandbox is not None:
+        evidence["sandbox"] = sandbox
+        evidence["sandbox_image"] = image
     if returncode:
         raise ValueError(f"Experiment exited with {returncode}; see {run_dir / 'stderr.log'}")
     return evidence
@@ -403,9 +461,26 @@ def output_differences(first: dict, second: dict, config: dict) -> list[str]:
     return differences
 
 
-def verify(root: Path, seeds: list[int] | None = None) -> dict:
+def verify(
+    root: Path,
+    seeds: list[int] | None = None,
+    sandbox: str | None = None,
+    sandbox_image: str | None = None,
+) -> dict:
     root = root.resolve()
     config = read_verify_config(read_policy(root))
+    if sandbox is not None:
+        if sandbox not in ("docker", "podman"):
+            raise ValueError(f"verify.sandbox must be 'docker' or 'podman', got {sandbox!r}")
+        config["sandbox"] = sandbox
+    if sandbox_image is not None:
+        if not isinstance(sandbox_image, str) or not sandbox_image.strip():
+            raise ValueError("verify.sandbox-image must be a nonempty string")
+        config["sandbox-image"] = sandbox_image
+
+    active_sandbox = config.get("sandbox")
+    active_sandbox_image = config.get("sandbox-image")
+
     before = input_snapshot(root, config["inputs"])
     state = git_state(root)
     run_id = time.strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:8]
@@ -437,24 +512,36 @@ def verify(root: Path, seeds: list[int] | None = None) -> dict:
         "warnings": audit_threading_determinism(),
         "report_path": str(report_path),
     }
+    if active_sandbox:
+        report["sandbox"] = active_sandbox
+        report["sandbox_image"] = active_sandbox_image or f"python:{platform.python_version()}-slim"
     if is_multi_seed:
         report["seeds"] = list(seeds)
         report["statistics"] = {}
         report["stability_failures"] = []
     try:
-        lockfile_name, mismatches = lockfile_environment_mismatches(root)
-        if mismatches:
-            raise ValueError(
-                f"P204: {lockfile_name} does not match the active environment: "
-                + "; ".join(mismatches)
-            )
+        if not active_sandbox:
+            lockfile_name, mismatches = lockfile_environment_mismatches(root)
+            if mismatches:
+                raise ValueError(
+                    f"P204: {lockfile_name} does not match the active environment: "
+                    + "; ".join(mismatches)
+                )
         if config["hash-inputs"]:
             ensure_inputs_unchanged(root, before)
         outputs = []
         if is_multi_seed:
             for seed in seeds:
                 run_dir = evidence_dir / f"seed-{seed}"
-                execution = execute(config["command"], root, run_dir, config["timeout"], seed=seed)
+                execution = execute(
+                    config["command"],
+                    root,
+                    run_dir,
+                    config["timeout"],
+                    seed=seed,
+                    sandbox=active_sandbox,
+                    sandbox_image=active_sandbox_image,
+                )
                 report["runs"].append(execution)
                 result = load_result(run_dir, config)
                 execution["metrics"] = {name: result["metrics"][name] for name in config["metrics"]}
@@ -479,7 +566,14 @@ def verify(root: Path, seeds: list[int] | None = None) -> dict:
         else:
             for index in (1, 2):
                 run_dir = evidence_dir / f"run-{index}"
-                execution = execute(config["command"], root, run_dir, config["timeout"])
+                execution = execute(
+                    config["command"],
+                    root,
+                    run_dir,
+                    config["timeout"],
+                    sandbox=active_sandbox,
+                    sandbox_image=active_sandbox_image,
+                )
                 report["runs"].append(execution)
                 result = load_result(run_dir, config)
                 # Keep only configured metrics and bounded runtime metadata in the report.

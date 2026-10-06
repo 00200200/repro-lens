@@ -111,6 +111,18 @@ def main(argv=None):
         default=None,
         help="Comma-separated integer seeds for multi-seed stability testing (e.g. 42,43,44)",
     )
+    replay.add_argument(
+        "--sandbox",
+        choices=["docker", "podman"],
+        default=None,
+        help="Execute experiment in an isolated container sandbox (docker or podman)",
+    )
+    replay.add_argument(
+        "--sandbox-image",
+        type=str,
+        default=None,
+        help="Container image for sandbox execution (e.g. python:3.11-slim)",
+    )
     comparison = sub.add_parser(
         "compare", help="Compare two retained verification reports without executing code"
     )
@@ -150,7 +162,12 @@ def main(argv=None):
                     ) from None
                 if len(seeds) < 2:
                     raise ValueError("Multi-seed verification requires at least 2 seeds")
-            report = verify(args.root, seeds=seeds)
+            report = verify(
+                args.root,
+                seeds=seeds,
+                sandbox=args.sandbox,
+                sandbox_image=args.sandbox_image,
+            )
             print(render(report, args.format), end="")
             write_step_summary(report)
             exit_codes = {"matched": 0, "mismatch": 1, "stable": 0, "unstable": 1, "error": 2}

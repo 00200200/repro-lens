@@ -620,6 +620,8 @@ def render(report: dict, format_: str, *, color: bool = False) -> str:
                 )
             for fail in report.get("stability_failures") or []:
                 lines.append(f"Stability failure: {fail}")
+        if report.get("sandbox"):
+            lines.append(f"Sandbox: {report['sandbox']} ({report.get('sandbox_image', 'default')})")
         for warning in report.get("warnings", []):
             lines.append(f"Warning: {warning}")
         if report.get("error"):
@@ -715,6 +717,11 @@ def render_step_summary(report: dict, prefix: str = "") -> str:
             "| --- | --- |",
             f"| Status | `{_md_cell(status)}` |",
         ]
+        if report.get("sandbox"):
+            lines.append(
+                f"| Sandbox | `{_md_cell(report['sandbox'])}` "
+                f"(`{_md_cell(report.get('sandbox_image', 'default'))}`) |"
+            )
         if kind == "multi_seed_verification":
             seeds_str = ", ".join(str(s) for s in report.get("seeds", []))
             lines.append(f"| Seeds | `{_md_cell(seeds_str)}` |")

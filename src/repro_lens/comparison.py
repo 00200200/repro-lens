@@ -23,6 +23,8 @@ CONFIG_FIELDS = {
     "result",
     "hash-inputs",
     "stability",
+    "sandbox",
+    "sandbox-image",
 }
 
 
@@ -57,6 +59,8 @@ def read_report(path: Path) -> tuple[dict, str]:
     original = dict(original)
     original.setdefault("hash-inputs", False)
     original.setdefault("stability", {})
+    original.setdefault("sandbox", None)
+    original.setdefault("sandbox-image", None)
     if set(original) != CONFIG_FIELDS:
         raise ValueError(f"Report must retain the complete verification configuration: {path}")
     try:
