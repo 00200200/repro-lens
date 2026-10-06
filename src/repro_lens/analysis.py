@@ -31,6 +31,18 @@ class Finding:
         return data
 
 
+@dataclass(frozen=True)
+class CustomRule:
+    """A user-defined custom AST matcher rule loaded from .repro-lens/rules.yaml."""
+
+    id: str
+    message: str
+    severity: str = "warning"
+    suggestion: str = ""
+    call: str = ""
+    missing_kwargs: tuple[str, ...] = ()
+
+
 RULES = {
     "R101": "A known randomized scikit-learn call has no explicit random_state.",
     "R102": "A new NumPy generator is initialized without explicit entropy control.",
@@ -137,7 +149,7 @@ def bound_names(node):
 
 
 class Scanner(ast.NodeVisitor):
-    def __init__(self, path, symbols, tree):
+    def __init__(self, path, symbols, tree, custom_rules: tuple[CustomRule, ...] = ()):
         self.path = path
         self.bindings = {}
         # Methods, lambdas and comprehension expressions skip class bodies (LEGB).
@@ -153,6 +165,7 @@ class Scanner(ast.NodeVisitor):
         self.cublas_workspace = False
         self.deterministic_algorithms = []
         self.parameters = ParameterDictionaries(tree)
+        self.custom_rules = custom_rules
         self.function_locals = {}
         pending = [symbols]
         while pending:
@@ -161,6 +174,32 @@ class Scanner(ast.NodeVisitor):
                 key = (scope.get_name(), scope.get_lineno(), frozenset(scope.get_parameters()))
                 self.function_locals[key] = scope.get_locals()
             pending.extend(scope.get_children())
+
+    def _matches_custom_rule(self, node, name, rule, kwargs, dynamic):
+        if not rule.call:
+            return False
+        matches_name = False
+        if name == rule.call:
+            matches_name = True
+        elif name and name.endswith("." + rule.call):
+            matches_name = True
+        elif isinstance(node.func, ast.Name) and node.func.id == rule.call:
+            matches_name = True
+        elif isinstance(node.func, ast.Attribute) and node.func.attr == rule.call:
+            matches_name = True
+
+        if not matches_name:
+            return False
+
+        if rule.missing_kwargs:
+            for kw in rule.missing_kwargs:
+                if kw not in kwargs:
+                    return True
+                val = kwargs[kw]
+                if literal(val) is None:
+                    return True
+
+        return False
 
     def _set_bindings(self, bindings):
         self.bindings = bindings
@@ -429,6 +468,22 @@ class Scanner(ast.NodeVisitor):
                     seed = key
             code = "R103" if name == "random.Random" else "R102"
             self.check_seed(node, name, seed, dynamic, code)
+
+        for rule in self.custom_rules:
+            if self._matches_custom_rule(node, name, rule, kwargs, dynamic):
+                sug = rule.suggestion or (
+                    f"Provide explicit {', '.join(rule.missing_kwargs)} argument(s)."
+                    if rule.missing_kwargs
+                    else rule.message
+                )
+                self.emit(
+                    node,
+                    rule.id,
+                    rule.message,
+                    sug,
+                    rule.severity,
+                )
+
         self.generic_visit(node)
 
     def check_seed(self, node, name, seed, dynamic, code):
@@ -458,7 +513,11 @@ class Scanner(ast.NodeVisitor):
             )
 
 
-def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Finding]]:
+def analyze(
+    source: str,
+    path: str = "<source>",
+    custom_rules: tuple[CustomRule, ...] | list[CustomRule] = (),
+) -> tuple[list[Finding], list[Finding]]:
     try:
         tree = ast.parse(source, filename=path)
         symbols = symtable.symtable(source, path, "exec")
@@ -474,7 +533,8 @@ def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Fi
                 "Fix syntax or scope declarations before relying on this scan.",
             )
         ], []
-    scanner = Scanner(path, symbols, tree)
+    rules_tuple = tuple(custom_rules)
+    scanner = Scanner(path, symbols, tree, custom_rules=rules_tuple)
     scanner.visit(tree)
     frameworks.report_global_rng(scanner.global_uses, scanner.seeded, scanner.emit)
     if scanner.imports_pandas:
@@ -486,14 +546,22 @@ def analyze(source: str, path: str = "<source>") -> tuple[list[Finding], list[Fi
     )
     suppressions = {}
     invalid = []
+    known_codes = {
+        "R101",
+        "R102",
+        "R103",
+        "R190",
+        *frameworks.RULES,
+        *(r.id for r in rules_tuple),
+    }
     for token in tokenize.generate_tokens(io.StringIO(source).readline):
         if token.type != tokenize.COMMENT or "repro-lens: ignore" not in token.string:
             continue
         match = re.fullmatch(
-            r"#\s*repro-lens: ignore\[([A-Z0-9, ]+)\]\s*--\s*(\S.*)", token.string.strip()
+            r"#\s*repro-lens: ignore\[([A-Za-z0-9, _-]+)\]\s*--\s*(\S.*)", token.string.strip()
         )
         codes = {code.strip() for code in match[1].split(",")} if match else set()
-        if not codes or not codes <= {"R101", "R102", "R103", "R190", *frameworks.RULES}:
+        if not codes or not codes <= known_codes:
             invalid.append(
                 Finding(
                     path,
