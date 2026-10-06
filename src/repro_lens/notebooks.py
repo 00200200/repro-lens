@@ -6,6 +6,8 @@ import ast
 import json
 import re
 
+from .analysis import Finding
+
 # Cell magics whose body is still Python; any other %% cell (bash, html, ...) is skipped.
 PYTHON_CELL_MAGICS = {"time", "timeit", "capture", "prun"}
 SHELL_ASSIGNMENT = re.compile(r"(\s*)([\w.\[\], ]+?)\s*=\s*[!%]")
@@ -86,3 +88,98 @@ def notebook_source(
             lines.append(line)
             locations.append((number, line_number))
     return "\n".join(lines) + "\n", locations, invalid
+
+
+def _cell_suppresses_rule(cell: dict, code: str) -> bool:
+    source = cell.get("source", "")
+    if isinstance(source, list):
+        source = "".join(source)
+    for line in source.splitlines():
+        match = re.search(r"#\s*repro-lens:\s*ignore\[([A-Za-z0-9, _-]+)\]\s*--\s*(\S.*)", line)
+        if match:
+            codes = {c.strip() for c in match.group(1).split(",")}
+            if code in codes:
+                return True
+    return False
+
+
+def check_execution_order(text: str, relative: str = "") -> tuple[list[Finding], list[Finding]]:
+    """Inspect execution counts of code cells in an nbformat 4 notebook.
+
+    Returns (active_findings, ignored_findings).
+    Reports R131 (review level) when code cells were executed out of order,
+    contain unexecuted cells in an executed notebook, or jump unexpectedly.
+    """
+    try:
+        document = json.loads(text)
+    except Exception:
+        return [], []
+    cells = document.get("cells") if isinstance(document, dict) else None
+    if not isinstance(cells, list):
+        return [], []
+
+    code_cells: list[tuple[int, dict]] = []
+    for number, cell in enumerate(cells, start=1):
+        if not isinstance(cell, dict) or cell.get("cell_type") != "code":
+            continue
+        code_cells.append((number, cell))
+
+    # If no cells have been executed, do not report an out-of-order execution issue.
+    has_executed = any(isinstance(cell.get("execution_count"), int) for _, cell in code_cells)
+    if not has_executed:
+        return [], []
+
+    active: list[Finding] = []
+    ignored: list[Finding] = []
+    expected = 1
+
+    R131_MSG = (
+        "Notebook cells were executed out of order; rerun from top to bottom before committing."
+    )
+    for number, cell in code_cells:
+        source = cell.get("source", "")
+        if isinstance(source, list):
+            source = "".join(source)
+
+        count = cell.get("execution_count")
+        # Trailing or intermediate empty code cells without execution count can be skipped
+        # if they have no code.
+        if count is None:
+            if not source.strip():
+                continue
+            finding = Finding(
+                path=relative,
+                line=1,
+                column=1,
+                code="R131",
+                severity="review",
+                message=R131_MSG,
+                suggestion="Cell was not executed; rerun notebook from top to bottom.",
+                cell=number,
+            )
+            if _cell_suppresses_rule(cell, "R131"):
+                ignored.append(finding)
+            else:
+                active.append(finding)
+        elif count != expected:
+            suggestion = (
+                f"Execution count [{count}] does not match expected [{expected}]; "
+                "rerun notebook from top to bottom."
+            )
+            finding = Finding(
+                path=relative,
+                line=1,
+                column=1,
+                code="R131",
+                severity="review",
+                message=R131_MSG,
+                suggestion=suggestion,
+                cell=number,
+            )
+            if _cell_suppresses_rule(cell, "R131"):
+                ignored.append(finding)
+            else:
+                active.append(finding)
+        expected += 1
+
+    return active, ignored

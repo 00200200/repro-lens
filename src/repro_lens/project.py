@@ -14,11 +14,11 @@ from pathlib import Path
 
 from .analysis import CustomRule, Finding, analyze
 from .frameworks import RULES as FRAMEWORK_RULES
-from .notebooks import notebook_source
+from .notebooks import check_execution_order, notebook_source
 
 LOCKFILE_NAMES = ("uv.lock", "poetry.lock")
 # Rule codes a suppression comment may list.
-SUPPRESSIBLE_CODES = {"R101", "R102", "R103", "R190", *FRAMEWORK_RULES}
+SUPPRESSIBLE_CODES = {"R101", "R102", "R103", "R131", "R190", *FRAMEWORK_RULES}
 IGNORE_JUSTIFICATION = "TODO: Review reproducibility"
 _EXISTING_IGNORE = re.compile(r"#\s*repro-lens:\s*ignore")
 
@@ -291,7 +291,8 @@ def analyze_notebook(
     relative: str,
     custom_rules: tuple[CustomRule, ...] | list[CustomRule] = (),
 ) -> tuple[list[Finding], list[Finding]]:
-    source, locations, invalid = notebook_source(path.read_text(encoding="utf-8"))
+    raw = path.read_text(encoding="utf-8")
+    source, locations, invalid = notebook_source(raw)
     active, ignored = analyze(source, relative, custom_rules=custom_rules)
 
     def in_cell(finding: Finding) -> Finding:
@@ -313,7 +314,10 @@ def analyze_notebook(
         )
         for cell, line, message in invalid
     ]
-    return [in_cell(f) for f in active] + errors, [in_cell(f) for f in ignored]
+    order_active, order_ignored = check_execution_order(raw, relative)
+    return [in_cell(f) for f in active] + errors + order_active, [
+        in_cell(f) for f in ignored
+    ] + order_ignored
 
 
 def check(root: Path, selected: list[str] | None = None) -> dict:

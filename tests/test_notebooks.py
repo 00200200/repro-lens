@@ -186,3 +186,82 @@ def test_unreadable_notebooks_are_not_a_clean_scan(tmp_path, content, message):
     assert finding["code"] == "S902"
     assert message in finding["message"]
     assert main(["check", "--root", str(tmp_path), "--fail-on", "error"]) == 1
+
+
+def test_clean_notebook_execution_order_produces_no_r131(tmp_path):
+    doc = {
+        "cells": [
+            {"cell_type": "code", "execution_count": 1, "source": "x = 1"},
+            {"cell_type": "markdown", "source": "# Section"},
+            {"cell_type": "code", "execution_count": 2, "source": "y = x + 1"},
+            {"cell_type": "code", "execution_count": 3, "source": "print(y)"},
+        ],
+        "metadata": {},
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+    (tmp_path / "clean.ipynb").write_text(json.dumps(doc))
+    report = check(tmp_path)
+    assert [f["code"] for f in report["findings"] if f["code"] == "R131"] == []
+
+
+def test_non_monotonic_execution_order_triggers_r131(tmp_path):
+    # Cell sequence [1, 5, 2, 6]
+    doc = {
+        "cells": [
+            {"cell_type": "code", "execution_count": 1, "source": "a = 1"},
+            {"cell_type": "code", "execution_count": 5, "source": "b = 2"},
+            {"cell_type": "code", "execution_count": 2, "source": "c = 3"},
+            {"cell_type": "code", "execution_count": 6, "source": "d = 4"},
+        ],
+        "metadata": {},
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+    (tmp_path / "messy.ipynb").write_text(json.dumps(doc))
+    report = check(tmp_path)
+    r131_findings = [f for f in report["findings"] if f["code"] == "R131"]
+    assert len(r131_findings) == 3
+    assert [f["cell"] for f in r131_findings] == [2, 3, 4]
+    assert all(f["severity"] == "review" for f in r131_findings)
+    assert all("executed out of order" in f["message"] for f in r131_findings)
+
+
+def test_unexecuted_cell_gap_triggers_r131(tmp_path):
+    doc = {
+        "cells": [
+            {"cell_type": "code", "execution_count": 1, "source": "a = 1"},
+            {"cell_type": "code", "execution_count": None, "source": "b = 2"},
+            {"cell_type": "code", "execution_count": 2, "source": "c = 3"},
+        ],
+        "metadata": {},
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+    (tmp_path / "gap.ipynb").write_text(json.dumps(doc))
+    report = check(tmp_path)
+    r131_findings = [f for f in report["findings"] if f["code"] == "R131"]
+    assert len(r131_findings) >= 1
+    assert any(f["cell"] == 2 for f in r131_findings)
+
+
+def test_r131_can_be_suppressed_with_inline_comment(tmp_path):
+    doc = {
+        "cells": [
+            {"cell_type": "code", "execution_count": 1, "source": "a = 1"},
+            {
+                "cell_type": "code",
+                "execution_count": 5,
+                "source": "b = 2  # repro-lens: ignore[R131] -- Re-run out of order for demo.",
+            },
+        ],
+        "metadata": {},
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+    (tmp_path / "suppressed.ipynb").write_text(json.dumps(doc))
+    report = check(tmp_path)
+    assert [f for f in report["findings"] if f["code"] == "R131"] == []
+    suppressed_r131 = [f for f in report["suppressed"] if f["code"] == "R131"]
+    assert len(suppressed_r131) == 1
+    assert suppressed_r131[0]["cell"] == 2

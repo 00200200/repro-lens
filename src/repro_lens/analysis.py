@@ -47,6 +47,9 @@ RULES = {
     "R101": "A known randomized scikit-learn call has no explicit random_state.",
     "R102": "A new NumPy generator is initialized without explicit entropy control.",
     "R103": "A new Python Random instance is initialized without explicit entropy control.",
+    "R131": (
+        "Notebook cells were executed out of order; rerun from top to bottom before committing."
+    ),
     **frameworks.RULES,
     "R190": "Dynamic arguments prevent deciding whether randomness is controlled.",
     "P201": "A file required by the project's own policy is missing.",
@@ -558,6 +561,7 @@ def analyze(
         "R101",
         "R102",
         "R103",
+        "R131",
         "R190",
         *frameworks.RULES,
         *(r.id for r in rules_tuple),

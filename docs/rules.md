@@ -23,6 +23,7 @@
 | R119 | review | CatBoost estimator lacks explicit random_seed or random_state |
 | R120 | review | PyTorch deterministic algorithms enabled without CUBLAS_WORKSPACE_CONFIG |
 | R124 | review | `torch.cuda.manual_seed` used without `torch.cuda.manual_seed_all` |
+| R131 | review | Notebook cells were executed out of order; rerun from top to bottom before committing |
 | R190 | review | Dynamic arguments or framework configuration prevent a decision |
 | P201 | error | A file required by this project's policy is missing |
 | P202 | error | Project configuration is invalid |
