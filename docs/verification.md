@@ -68,7 +68,30 @@ it emits a warning in the verification report recommending explicit pinning (e.g
 `export OMP_NUM_THREADS=1` or a fixed thread count) to prevent floating-point reduction
 order variations.
 
-Exit 0: matched; exit 1: mismatch; exit 2: configuration/execution error. Fresh output
+Exit 0: matched (or stable); exit 1: mismatch (or unstable); exit 2: configuration/execution error. Fresh output
 directories prevent stale metrics from hiding failure. POSIX timeouts kill the process
 group; on Windows only the direct process is killed. The runner is not a sandbox,
 does not limit GPU use or remove inherited credentials.
+
+## Multi-seed experiment variance & stability bounds (`--seeds`)
+
+Running an experiment twice with the same seed verifies local determinism. Verifying
+scientific stability across initialization seeds tests that metrics do not collapse or
+vary beyond acceptable experimental boundaries:
+
+```bash
+repro-lens verify --seeds 42,43,44,45
+```
+
+When `--seeds` is provided:
+1. The experiment command executes across each declared seed. `{seed}` in `command` is replaced by the current seed, and the environment variable `SEED` is exported.
+2. Repro Lens calculates summary statistics for each declared metric: mean, sample variance ($s^2$ with Bessel's correction $N-1$), standard deviation ($s$), standard error of the mean ($\text{sem} = s / \sqrt{N}$), minimum, and maximum.
+3. If `[tool.repro-lens.verify.stability]` is configured in `pyproject.toml`, metrics are checked against configured bounds (`max_std`, `max_variance`, `min_mean`, `max_mean`):
+
+```toml
+[tool.repro-lens.verify.stability]
+accuracy = { max_std = 0.02, min_mean = 0.85 }
+```
+
+If any metric violates its stability bounds, `verify` exits with code 1 (`unstable`) and details the variance failure in the report and `$GITHUB_STEP_SUMMARY`. If all metrics pass, it exits with code 0 (`stable`).
+

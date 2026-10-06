@@ -105,6 +105,12 @@ def main(argv=None):
     )
     replay.add_argument("--root", type=Path, default=Path.cwd())
     replay.add_argument("--format", choices=["text", "json"], default="text")
+    replay.add_argument(
+        "--seeds",
+        type=str,
+        default=None,
+        help="Comma-separated integer seeds for multi-seed stability testing (e.g. 42,43,44)",
+    )
     comparison = sub.add_parser(
         "compare", help="Compare two retained verification reports without executing code"
     )
@@ -134,10 +140,21 @@ def main(argv=None):
         if not args.root.is_dir():
             raise ValueError(f"Project directory does not exist: {args.root}")
         if args.command == "verify":
-            report = verify(args.root)
+            seeds = None
+            if args.seeds is not None:
+                try:
+                    seeds = [int(s.strip()) for s in args.seeds.split(",") if s.strip()]
+                except ValueError:
+                    raise ValueError(
+                        f"Invalid --seeds format: {args.seeds!r}. Expected integers."
+                    ) from None
+                if len(seeds) < 2:
+                    raise ValueError("Multi-seed verification requires at least 2 seeds")
+            report = verify(args.root, seeds=seeds)
             print(render(report, args.format), end="")
             write_step_summary(report)
-            return {"matched": 0, "mismatch": 1, "error": 2}[report["status"]]
+            exit_codes = {"matched": 0, "mismatch": 1, "stable": 0, "unstable": 1, "error": 2}
+            return exit_codes.get(report["status"], 2)
         report = (
             add_ignores(args.root, args.files) if args.add_ignores else check(args.root, args.files)
         )

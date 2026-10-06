@@ -611,6 +611,15 @@ def render(report: dict, format_: str, *, color: bool = False) -> str:
     if report["kind"] != "static_check":
         lines = [f"Repro Lens: {report['status']}", report["assurance"]]
         lines += report.get("differences", [])
+        if report.get("kind") == "multi_seed_verification":
+            for metric, stats in (report.get("statistics") or {}).items():
+                lines.append(
+                    f"Metric '{metric}' (n={stats['count']}): mean={stats['mean']} "
+                    f"std={stats['std']} variance={stats['variance']} "
+                    f"min={stats['min']} max={stats['max']}"
+                )
+            for fail in report.get("stability_failures") or []:
+                lines.append(f"Stability failure: {fail}")
         for warning in report.get("warnings", []):
             lines.append(f"Warning: {warning}")
         if report.get("error"):
@@ -695,7 +704,7 @@ def render_step_summary(report: dict, prefix: str = "") -> str:
             lines += ["", f"Suppressed findings: {len(report['suppressed'])}"]
         return "\n".join(lines) + "\n"
 
-    if kind in {"repeatability_test", "report_comparison"}:
+    if kind in {"repeatability_test", "multi_seed_verification", "report_comparison"}:
         status = report.get("status", "unknown")
         lines = [
             f"## Repro Lens — `{_md_cell(status)}`",
@@ -706,6 +715,29 @@ def render_step_summary(report: dict, prefix: str = "") -> str:
             "| --- | --- |",
             f"| Status | `{_md_cell(status)}` |",
         ]
+        if kind == "multi_seed_verification":
+            seeds_str = ", ".join(str(s) for s in report.get("seeds", []))
+            lines.append(f"| Seeds | `{_md_cell(seeds_str)}` |")
+            stats = report.get("statistics", {})
+            if stats:
+                lines += [
+                    "",
+                    "### Metric Stability Across Seeds",
+                    "",
+                    "| Metric | Mean | Std Dev | Variance | Min | Max |",
+                    "| --- | --- | --- | --- | --- | --- |",
+                ]
+                for name, s in stats.items():
+                    lines.append(
+                        f"| `{_md_cell(name)}` | {s['mean']} | {s['std']} | "
+                        f"{s['variance']} | {s['min']} | {s['max']} |"
+                    )
+            failures = report.get("stability_failures", [])
+            if failures:
+                lines.extend(_details("Stability Failures", [f"- {_md_cell(f)}" for f in failures]))
+            else:
+                lines.append("")
+                lines.append("All metrics satisfied stability bounds.")
         if kind == "repeatability_test" and report.get("report_path"):
             lines.append(f"| Evidence | `{_md_cell(report['report_path'])}` |")
         if kind == "report_comparison":

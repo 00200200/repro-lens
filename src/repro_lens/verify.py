@@ -17,6 +17,7 @@ import time
 import uuid
 from fractions import Fraction
 from pathlib import Path
+from typing import Any
 
 from .json_data import loads, same_json
 from .project import inside, lockfile_environment_mismatches, read_policy
@@ -116,6 +117,7 @@ def read_verify_config(policy: dict) -> dict:
         "rtol",
         "result",
         "hash-inputs",
+        "stability",
     }
     if set(config) - allowed:
         raise ValueError(f"Unknown verify settings: {sorted(set(config) - allowed)}")
@@ -139,6 +141,19 @@ def read_verify_config(policy: dict) -> dict:
     hash_inputs = config.setdefault("hash-inputs", False)
     if type(hash_inputs) is not bool:
         raise ValueError("verify.hash-inputs must be a boolean")
+    stability = config.setdefault("stability", {})
+    if not isinstance(stability, dict):
+        raise ValueError("verify.stability must be a table")
+    for metric_name, bounds in stability.items():
+        if not isinstance(bounds, dict):
+            raise ValueError(f"verify.stability.{metric_name} must be a table of bounds")
+        for key, val in bounds.items():
+            if key not in ("max_std", "max_variance", "min_mean", "max_mean"):
+                raise ValueError(f"Unknown stability bound {key!r} for metric {metric_name!r}")
+            if type(val) not in (int, float) or not math.isfinite(val):
+                raise ValueError(f"verify.stability.{metric_name}.{key} must be a finite number")
+            if key in ("max_std", "max_variance") and val < 0:
+                raise ValueError(f"verify.stability.{metric_name}.{key} must be nonnegative")
     for value in [config["result"], *config["artifacts"]]:
         if (
             not isinstance(value, str)
@@ -246,16 +261,24 @@ def git_state(root: Path) -> dict:
         return {"commit": None, "dirty": None}
 
 
-def execute(command: list[str], root: Path, run_dir: Path, timeout: float) -> dict:
+def execute(
+    command: list[str], root: Path, run_dir: Path, timeout: float, seed: int | None = None
+) -> dict:
     run_dir.mkdir()
     argv = [
-        arg.replace("{output}", str(run_dir)).replace("{python}", sys.executable) for arg in command
+        arg.replace("{output}", str(run_dir))
+        .replace("{python}", sys.executable)
+        .replace("{seed}", str(seed) if seed is not None else "")
+        for arg in command
     ]
     start = time.monotonic()
+    env = os.environ.copy()
+    if seed is not None:
+        env["SEED"] = str(seed)
     # Logs go to files so experiment output cannot grow the runner's memory unboundedly.
     with (run_dir / "stdout.log").open("wb") as out, (run_dir / "stderr.log").open("wb") as err:
         process = subprocess.Popen(
-            argv, cwd=root, stdout=out, stderr=err, start_new_session=os.name == "posix"
+            argv, cwd=root, env=env, stdout=out, stderr=err, start_new_session=os.name == "posix"
         )
         try:
             returncode = process.wait(timeout=timeout)
@@ -272,9 +295,73 @@ def execute(command: list[str], root: Path, run_dir: Path, timeout: float) -> di
         "elapsed_seconds": round(time.monotonic() - start, 4),
         "output": str(run_dir),
     }
+    if seed is not None:
+        evidence["seed"] = seed
     if returncode:
         raise ValueError(f"Experiment exited with {returncode}; see {run_dir / 'stderr.log'}")
     return evidence
+
+
+def compute_metric_statistics(values: list[float | int]) -> dict[str, Any]:
+    """Calculate mean, sample variance, standard deviation, and standard error.
+
+    Zero external dependencies (uses standard math).
+    """
+    n = len(values)
+    if n == 0:
+        return {
+            "count": 0,
+            "mean": 0.0,
+            "variance": 0.0,
+            "std": 0.0,
+            "sem": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "values": [],
+        }
+    mean = sum(values) / n
+    variance = (sum((x - mean) ** 2 for x in values) / (n - 1)) if n > 1 else 0.0
+    std = math.sqrt(variance)
+    sem = std / math.sqrt(n) if n > 0 else 0.0
+    return {
+        "count": n,
+        "mean": round(mean, 6),
+        "variance": round(variance, 6),
+        "std": round(std, 6),
+        "sem": round(sem, 6),
+        "min": min(values),
+        "max": max(values),
+        "values": list(values),
+    }
+
+
+def check_stability_bounds(
+    stats: dict[str, dict[str, Any]],
+    stability_config: dict[str, dict[str, float]],
+) -> list[str]:
+    """Check computed metric statistics against configured stability bounds."""
+    failures: list[str] = []
+    for metric, m_stats in stats.items():
+        bounds = stability_config.get(metric, {})
+        if "max_std" in bounds and m_stats["std"] > bounds["max_std"]:
+            failures.append(
+                f"Metric '{metric}' standard deviation {m_stats['std']} "
+                f"exceeds max_std {bounds['max_std']}"
+            )
+        if "max_variance" in bounds and m_stats["variance"] > bounds["max_variance"]:
+            failures.append(
+                f"Metric '{metric}' variance {m_stats['variance']} "
+                f"exceeds max_variance {bounds['max_variance']}"
+            )
+        if "min_mean" in bounds and m_stats["mean"] < bounds["min_mean"]:
+            failures.append(
+                f"Metric '{metric}' mean {m_stats['mean']} below min_mean {bounds['min_mean']}"
+            )
+        if "max_mean" in bounds and m_stats["mean"] > bounds["max_mean"]:
+            failures.append(
+                f"Metric '{metric}' mean {m_stats['mean']} exceeds max_mean {bounds['max_mean']}"
+            )
+    return failures
 
 
 def load_result(run_dir: Path, config: dict) -> dict:
@@ -316,7 +403,7 @@ def output_differences(first: dict, second: dict, config: dict) -> list[str]:
     return differences
 
 
-def verify(root: Path) -> dict:
+def verify(root: Path, seeds: list[int] | None = None) -> dict:
     root = root.resolve()
     config = read_verify_config(read_policy(root))
     before = input_snapshot(root, config["inputs"])
@@ -325,14 +412,21 @@ def verify(root: Path) -> dict:
     evidence_dir = inside(root, root / ".repro-lens" / "verify" / run_id)
     evidence_dir.mkdir(parents=True)
     report_path = evidence_dir / "report.json"
-    report = {
-        "schema_version": 1,
-        "kind": "repeatability_test",
-        "status": "error",
-        "assurance": (
+    is_multi_seed = seeds is not None
+    assurance = (
+        "Multi-seed verification evaluates metric variance across declared seeds; "
+        "not cross-platform or hyperparameter equivalence."
+        if is_multi_seed
+        else (
             "Two runs test only the declared outputs in this local environment; "
             "not scientific validity or cross-platform reproducibility."
-        ),
+        )
+    )
+    report = {
+        "schema_version": 1,
+        "kind": "multi_seed_verification" if is_multi_seed else "repeatability_test",
+        "status": "error",
+        "assurance": assurance,
         "root": str(root),
         "git": state,
         "inputs_sha256": before,
@@ -343,6 +437,10 @@ def verify(root: Path) -> dict:
         "warnings": audit_threading_determinism(),
         "report_path": str(report_path),
     }
+    if is_multi_seed:
+        report["seeds"] = list(seeds)
+        report["statistics"] = {}
+        report["stability_failures"] = []
     try:
         lockfile_name, mismatches = lockfile_environment_mismatches(root)
         if mismatches:
@@ -353,24 +451,50 @@ def verify(root: Path) -> dict:
         if config["hash-inputs"]:
             ensure_inputs_unchanged(root, before)
         outputs = []
-        for index in (1, 2):
-            run_dir = evidence_dir / f"run-{index}"
-            execution = execute(config["command"], root, run_dir, config["timeout"])
-            report["runs"].append(execution)
-            result = load_result(run_dir, config)
-            # Keep only configured metrics and bounded runtime metadata in the report.
-            execution["metrics"] = {name: result["metrics"][name] for name in config["metrics"]}
-            execution["runtime"] = result.get("runtime", {})
-            execution["artifacts_sha256"] = {
-                name: digest(inside(run_dir, run_dir / name)) for name in config["artifacts"]
-            }
-            outputs.append(execution)
-            if input_snapshot(root, config["inputs"]) != before:
-                raise ValueError(
-                    "Declared inputs changed during verification; the comparison is invalid"
-                )
-        report["differences"] = output_differences(*outputs, config)
-        report["status"] = "mismatch" if report["differences"] else "matched"
+        if is_multi_seed:
+            for seed in seeds:
+                run_dir = evidence_dir / f"seed-{seed}"
+                execution = execute(config["command"], root, run_dir, config["timeout"], seed=seed)
+                report["runs"].append(execution)
+                result = load_result(run_dir, config)
+                execution["metrics"] = {name: result["metrics"][name] for name in config["metrics"]}
+                execution["runtime"] = result.get("runtime", {})
+                execution["artifacts_sha256"] = {
+                    name: digest(inside(run_dir, run_dir / name)) for name in config["artifacts"]
+                }
+                outputs.append(execution)
+                if input_snapshot(root, config["inputs"]) != before:
+                    raise ValueError(
+                        "Declared inputs changed during verification; the comparison is invalid"
+                    )
+            metric_values: dict[str, list[float | int]] = {name: [] for name in config["metrics"]}
+            for out in outputs:
+                for name in config["metrics"]:
+                    metric_values[name].append(out["metrics"][name])
+            stats = {name: compute_metric_statistics(vals) for name, vals in metric_values.items()}
+            report["statistics"] = stats
+            failures = check_stability_bounds(stats, config.get("stability", {}))
+            report["stability_failures"] = failures
+            report["status"] = "unstable" if failures else "stable"
+        else:
+            for index in (1, 2):
+                run_dir = evidence_dir / f"run-{index}"
+                execution = execute(config["command"], root, run_dir, config["timeout"])
+                report["runs"].append(execution)
+                result = load_result(run_dir, config)
+                # Keep only configured metrics and bounded runtime metadata in the report.
+                execution["metrics"] = {name: result["metrics"][name] for name in config["metrics"]}
+                execution["runtime"] = result.get("runtime", {})
+                execution["artifacts_sha256"] = {
+                    name: digest(inside(run_dir, run_dir / name)) for name in config["artifacts"]
+                }
+                outputs.append(execution)
+                if input_snapshot(root, config["inputs"]) != before:
+                    raise ValueError(
+                        "Declared inputs changed during verification; the comparison is invalid"
+                    )
+            report["differences"] = output_differences(*outputs, config)
+            report["status"] = "mismatch" if report["differences"] else "matched"
         if config["hash-inputs"]:
             report["input_snapshot_path"] = str(write_input_snapshot(root, before))
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
