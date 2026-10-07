@@ -956,3 +956,204 @@ def test_r125_suppression():
     assert active == []
     assert len(suppressed) == 1
     assert suppressed[0].code == "R125"
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        (
+            """
+            import ray
+            import torch
+
+            @ray.remote
+            def worker():
+                torch.manual_seed(42)
+            """,
+            [("R123", "review")],
+        ),
+        (
+            """
+            import ray
+            import numpy as np
+
+            @ray.remote
+            def worker():
+                np.random.seed(123)
+            """,
+            [("R123", "review")],
+        ),
+        (
+            """
+            import ray
+            import random
+
+            @ray.remote
+            def worker():
+                random.seed(99)
+            """,
+            [("R123", "review")],
+        ),
+        (
+            """
+            import ray
+            import torch
+
+            @ray.remote(num_cpus=2)
+            def worker():
+                torch.manual_seed(42)
+            """,
+            [("R123", "review")],
+        ),
+        (
+            """
+            import ray
+            import torch
+
+            @ray.remote
+            class WorkerActor:
+                def __init__(self):
+                    torch.manual_seed(42)
+            """,
+            [("R123", "review")],
+        ),
+        (
+            """
+            from ray.train.torch import TorchTrainer
+            import torch
+
+            def train_loop():
+                torch.manual_seed(42)
+
+            trainer = TorchTrainer(train_loop_per_worker=train_loop)
+            """,
+            [("R123", "review")],
+        ),
+        (
+            """
+            from ray.train.data_parallel_trainer import DataParallelTrainer
+            import torch
+
+            def train_loop():
+                torch.manual_seed(42)
+
+            trainer = DataParallelTrainer(train_loop_per_worker=train_loop)
+            """,
+            [("R123", "review")],
+        ),
+        (
+            """
+            from ray.train.torch import TorchTrainer
+            import torch
+
+            def train_loop():
+                torch.manual_seed(42)
+
+            trainer = TorchTrainer(train_loop)
+            """,
+            [("R123", "review")],
+        ),
+        (
+            """
+            from ray.train.torch import TorchTrainer
+            import torch
+
+            trainer = TorchTrainer(train_loop_per_worker=lambda: torch.manual_seed(42))
+            """,
+            [("R123", "review")],
+        ),
+        (
+            """
+            import ray
+            import torch
+
+            @ray.remote
+            def worker():
+                torch.manual_seed(42 + ray.train.get_context().get_world_rank())
+            """,
+            [],
+        ),
+        (
+            """
+            from ray.train.torch import TorchTrainer
+            import ray
+            import torch
+
+            def train_loop():
+                torch.manual_seed(base_seed + ray.train.get_context().get_world_rank())
+
+            trainer = TorchTrainer(train_loop_per_worker=train_loop)
+            """,
+            [],
+        ),
+        (
+            """
+            from ray.train.torch import TorchTrainer
+            import torch
+
+            def train_loop(worker_id):
+                torch.manual_seed(42 + worker_id)
+
+            trainer = TorchTrainer(train_loop_per_worker=train_loop)
+            """,
+            [],
+        ),
+        (
+            """
+            from ray.train.torch import TorchTrainer
+            import ray
+            import torch
+
+            def train_loop():
+                rank = ray.train.get_context().get_world_rank()
+                torch.manual_seed(42 + rank)
+
+            trainer = TorchTrainer(train_loop_per_worker=train_loop)
+            """,
+            [],
+        ),
+        (
+            """
+            import torch
+
+            def normal_train():
+                torch.manual_seed(42)
+            """,
+            [],
+        ),
+        (
+            """
+            import numpy as np
+
+            def regular_func():
+                np.random.seed(42)
+            """,
+            [],
+        ),
+        (
+            """
+            import random
+
+            def regular_func():
+                random.seed(42)
+            """,
+            [],
+        ),
+    ],
+)
+def test_r123_ray_distributed_seeding(source, expected):
+    assert findings(source) == expected
+
+
+def test_r123_suppression():
+    code = (
+        "import ray\n"
+        "import torch\n"
+        "@ray.remote\n"
+        "def worker():\n"
+        "    torch.manual_seed(42)  # repro-lens: ignore[R123] -- Single-actor test worker.\n"
+    )
+    active, suppressed = analyze(code, "test.py")
+    assert active == []
+    assert len(suppressed) == 1
+    assert suppressed[0].code == "R123"

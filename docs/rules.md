@@ -22,6 +22,7 @@
 | R118 | review | Polars `sample()` has no explicit seed |
 | R119 | review | CatBoost estimator lacks explicit random_seed or random_state |
 | R120 | review | PyTorch deterministic algorithms enabled without CUBLAS_WORKSPACE_CONFIG |
+| R123 | review | Ray distributed worker or train loop uses fixed seed without worker rank or ID |
 | R124 | review | `torch.cuda.manual_seed` used without `torch.cuda.manual_seed_all` |
 | R125 | warning | Non-deterministic LLM generation parameters in vLLM or Hugging Face |
 | R126 | warning | Pre-split transformer fitting leaks test set distribution into training pipeline |
