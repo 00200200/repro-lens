@@ -23,6 +23,7 @@ RULES = {
     "R118": "Polars sample() has no explicit seed; review random subsampling.",
     "R120": "PyTorch deterministic algorithms are enabled without CUBLAS_WORKSPACE_CONFIG.",
     "R124": "torch.cuda.manual_seed seeds only the current GPU without manual_seed_all.",
+    "R125": "Non-deterministic LLM generation parameters in vLLM or Hugging Face.",
     "R127": "Hugging Face dataset shuffle() has no explicit seed; review random shuffling.",
     "R129": "Dask DataFrame sample() or shuffle() has no explicit random_state or seed.",
     "R130": "PyTorch operation uses non-deterministic CUDA atomicAdd; review GPU reproducibility.",
@@ -903,6 +904,120 @@ def check_torch_atomic_add(node, name, emit):
     return False
 
 
+def is_vllm_sampling_params(node, name, qualified=None) -> bool:
+    if name in {"vllm.SamplingParams", "SamplingParams", "vllm.sampling_params.SamplingParams"}:
+        return True
+    if isinstance(node.func, ast.Name) and node.func.id == "SamplingParams":
+        return True
+    if isinstance(node.func, ast.Attribute) and node.func.attr == "SamplingParams":
+        return True
+    if qualified:
+        q = qualified(node.func)
+        if q in {"vllm.SamplingParams", "SamplingParams"}:
+            return True
+    return False
+
+
+def is_hf_generation_config(node, name, qualified=None) -> bool:
+    if name in {
+        "transformers.GenerationConfig",
+        "GenerationConfig",
+        "transformers.generation.configuration_utils.GenerationConfig",
+    }:
+        return True
+    if isinstance(node.func, ast.Name) and node.func.id == "GenerationConfig":
+        return True
+    if isinstance(node.func, ast.Attribute) and node.func.attr == "GenerationConfig":
+        return True
+    if qualified:
+        q = qualified(node.func)
+        if q in {"transformers.GenerationConfig", "GenerationConfig"}:
+            return True
+    return False
+
+
+def is_generate_call(node, name) -> bool:
+    if isinstance(node.func, ast.Attribute) and node.func.attr == "generate":
+        return True
+    if name and (name == "generate" or name.endswith(".generate")):
+        return True
+    return False
+
+
+def check_vllm_sampling_params(node, name, emit, resolve=None):
+    options = Arguments.call(node, (), resolve)
+    if options.unknown:
+        unresolved(node, name, emit)
+        return
+    temp = options.value("temperature", 1.0)
+    if temp is UNKNOWN:
+        unresolved(node, name, emit)
+        return
+    # temperature=0 or 0.0 is deterministic greedy decoding
+    if temp == 0:
+        return
+    seed = options.value("seed")
+    if seed is UNKNOWN:
+        unresolved(node, name, emit)
+        return
+    if seed is MISSING or seed is None:
+        emit(
+            node,
+            "R125",
+            f"{name} specifies sampling (temperature > 0) without an explicit seed.",
+            "Pass seed=integer to ensure reproducible completions across runs, or set "
+            "temperature=0 for greedy decoding.",
+            "warning",
+        )
+
+
+def check_hf_generation_config(node, name, emit, resolve=None):
+    options = Arguments.call(node, (), resolve)
+    if options.unknown:
+        unresolved(node, name, emit)
+        return
+    do_sample = options.value("do_sample", False)
+    if do_sample is UNKNOWN:
+        unresolved(node, name, emit)
+        return
+    if do_sample is True:
+        seed = options.value("seed")
+        if seed is UNKNOWN:
+            unresolved(node, name, emit)
+            return
+        if seed is MISSING or seed is None:
+            emit(
+                node,
+                "R125",
+                f"{name} specifies do_sample=True without an explicit seed.",
+                "Pass seed=integer or set do_sample=False to ensure reproducible generation.",
+                "warning",
+            )
+
+
+def check_generate_call(node, name, emit, resolve=None):
+    options = Arguments.call(node, (), resolve)
+    do_sample = options.value("do_sample")
+    if do_sample is MISSING or do_sample is False or do_sample is None:
+        return
+    if do_sample is UNKNOWN:
+        unresolved(node, name, emit)
+        return
+    if do_sample is True:
+        seed = options.value("seed")
+        if seed is UNKNOWN:
+            unresolved(node, name, emit)
+            return
+        if seed is MISSING or seed is None:
+            emit(
+                node,
+                "R125",
+                f"{name} specifies do_sample=True without an explicit seed.",
+                "Pass seed=integer or set do_sample=False to ensure reproducible generation.",
+                "warning",
+            )
+
+
 def check_call(node, name, emit, resolve=None, qualified=None):
     if name in XGBOOST or name in {
         "xgboost.train",
@@ -943,6 +1058,12 @@ def check_call(node, name, emit, resolve=None, qualified=None):
         check_trainer(node, name, emit, resolve)
     elif name in HF_TRAINING_ARGS:
         check_hf_training_args(node, name, emit, resolve)
+    elif is_vllm_sampling_params(node, name, qualified):
+        check_vllm_sampling_params(node, name or "SamplingParams", emit, resolve)
+    elif is_hf_generation_config(node, name, qualified):
+        check_hf_generation_config(node, name or "GenerationConfig", emit, resolve)
+    elif is_generate_call(node, name):
+        check_generate_call(node, name or "generate", emit, resolve)
     elif name == "torch.use_deterministic_algorithms":
         check_algorithms(node, name, emit, resolve)
     elif name == "torch.nn.functional.interpolate":

@@ -913,3 +913,46 @@ def test_hf_training_arguments_import_paths(prefix, call):
     bad = f"{prefix}{call}(output_dir='./results')\n"
     assert findings(good) == []
     assert findings(bad) == [("R117", "review")]
+
+
+VLLM = "from vllm import SamplingParams\n"
+HF_GEN = "from transformers import GenerationConfig\n"
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        (VLLM + "params = SamplingParams(temperature=0.8)", [("R125", "warning")]),
+        (VLLM + "params = SamplingParams(temperature=0.8, seed=42)", []),
+        (VLLM + "params = SamplingParams(temperature=0.0)", []),
+        (VLLM + "params = SamplingParams(temperature=0)", []),
+        (VLLM + "params = SamplingParams(temperature=0.7, seed=None)", [("R125", "warning")]),
+        (VLLM + "params = SamplingParams()", [("R125", "warning")]),
+        (VLLM + "params = SamplingParams(temperature=dynamic_val)", [("R190", "review")]),
+        (VLLM + "params = SamplingParams(seed=dynamic_seed)", [("R190", "review")]),
+        ("import vllm\nparams = vllm.SamplingParams(temperature=0.9)", [("R125", "warning")]),
+        ("import vllm\nparams = vllm.SamplingParams(temperature=0.9, seed=123)", []),
+        (HF_GEN + "cfg = GenerationConfig(do_sample=True)", [("R125", "warning")]),
+        (HF_GEN + "cfg = GenerationConfig(do_sample=True, seed=42)", []),
+        (HF_GEN + "cfg = GenerationConfig(do_sample=False)", []),
+        (HF_GEN + "cfg = GenerationConfig()", []),
+        (HF_GEN + "cfg = GenerationConfig(do_sample=True, seed=None)", [("R125", "warning")]),
+        ("model.generate(input_ids, do_sample=True)", [("R125", "warning")]),
+        ("model.generate(input_ids, do_sample=True, seed=42)", []),
+        ("model.generate(input_ids, do_sample=False)", []),
+        ("model.generate(input_ids)", []),
+    ],
+)
+def test_r125_llm_generation_determinism(source, expected):
+    assert findings(source) == expected
+
+
+def test_r125_suppression():
+    code = (
+        "from vllm import SamplingParams\n"
+        "params = SamplingParams(temperature=0.7)  # repro-lens: ignore[R125] -- Exploratory run.\n"
+    )
+    active, suppressed = analyze(code, "test.py")
+    assert active == []
+    assert len(suppressed) == 1
+    assert suppressed[0].code == "R125"
