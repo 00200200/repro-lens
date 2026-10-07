@@ -182,6 +182,9 @@ class Scanner(ast.NodeVisitor):
         self.imports_polars = False
         self.hf_dataset_shuffles = []
         self.imports_hf_datasets = False
+        self.dask_samples = []
+        self.dask_shuffles = []
+        self.imports_dask = False
         self.cublas_workspace = False
         self.deterministic_algorithms = []
         self.cuda_manual_seed = []
@@ -260,6 +263,7 @@ class Scanner(ast.NodeVisitor):
             self.imports_pandas |= alias.name.split(".")[0] == "pandas"
             self.imports_polars |= alias.name.split(".")[0] == "polars"
             self.imports_hf_datasets |= alias.name.split(".")[0] == "datasets"
+            self.imports_dask |= alias.name.split(".")[0] == "dask"
             name = alias.asname or alias.name.split(".")[0]
             self.bindings[name] = alias.name if alias.asname else name
 
@@ -271,6 +275,7 @@ class Scanner(ast.NodeVisitor):
         self.imports_pandas |= node.module.split(".")[0] == "pandas"
         self.imports_polars |= node.module.split(".")[0] == "polars"
         self.imports_hf_datasets |= node.module.split(".")[0] == "datasets"
+        self.imports_dask |= node.module.split(".")[0] == "dask"
         for alias in node.names:
             if alias.name != "*":
                 self.bindings[alias.asname or alias.name] = f"{node.module}.{alias.name}"
@@ -452,6 +457,10 @@ class Scanner(ast.NodeVisitor):
             self.polars_samples.append(node)
         if frameworks.hf_dataset_shuffle(node, name):
             self.hf_dataset_shuffles.append(node)
+        if frameworks.dask_sample(node, name):
+            self.dask_samples.append(node)
+        if frameworks.dask_shuffle(node, name):
+            self.dask_shuffles.append(node)
         self.cublas_workspace |= frameworks.puts_cublas_workspace(node, name)
         if frameworks.requests_deterministic_algorithms(node, name, self.parameters.resolve):
             self.deterministic_algorithms.append((node, name))
@@ -611,6 +620,9 @@ def analyze(
         frameworks.report_polars_sample(scanner.polars_samples, scanner.emit)
     if scanner.imports_hf_datasets:
         frameworks.report_hf_dataset_shuffle(scanner.hf_dataset_shuffles, scanner.emit)
+    if scanner.imports_dask:
+        frameworks.report_dask_sample(scanner.dask_samples, scanner.emit)
+        frameworks.report_dask_shuffle(scanner.dask_shuffles, scanner.emit)
     frameworks.report_cublas_workspace(
         scanner.deterministic_algorithms, scanner.cublas_workspace, scanner.emit
     )
