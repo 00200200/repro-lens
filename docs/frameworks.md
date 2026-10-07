@@ -287,6 +287,33 @@ Polars' `DataFrame.sample` and `LazyFrame.sample` draw random subsamples. Callin
 
 The receiver's type is not resolved at runtime. A call is treated as Polars sampling only when the file imports `polars`, the method is `.sample`, and the keyword arguments match Polars' signature: only keywords among `n`, `fraction`, `with_replacement`, `shuffle`, and `seed`. Positional arguments and calls in files that do not import `polars` are not flagged.
 
+## LLM Generation Parameters (vLLM & Hugging Face) — R125 (warning)
+
+```python
+from vllm import SamplingParams
+
+# R125 warning: temperature > 0 without explicit seed.
+params = SamplingParams(temperature=0.8, top_p=0.95)
+# No R125: explicit seed provided.
+params = SamplingParams(temperature=0.8, top_p=0.95, seed=42)
+# No R125: greedy decoding is deterministic.
+params = SamplingParams(temperature=0.0)
+
+from transformers import GenerationConfig
+
+# R125 warning: do_sample=True without explicit seed.
+config = GenerationConfig(do_sample=True, top_k=50)
+# No R125: explicit seed provided.
+config = GenerationConfig(do_sample=True, top_k=50, seed=42)
+
+# Method calls on models:
+model.generate(input_ids, do_sample=True)  # R125 warning.
+model.generate(input_ids, do_sample=True, seed=42)  # No R125.
+model.generate(input_ids, do_sample=False)  # No R125 (deterministic).
+```
+
+In Generative AI evaluation benchmarks and LLM pipelines, non-deterministic sampling without an explicit random seed invalidates LLM-as-a-judge scores and reproducibility. `R125` flags `SamplingParams` with `temperature > 0` and missing `seed`, as well as `GenerationConfig` or `generate()` calls with `do_sample=True` and missing `seed`.
+
 ## Hugging Face Datasets shuffling - R127 (review)
 
 ```python
