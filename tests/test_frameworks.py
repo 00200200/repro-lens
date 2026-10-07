@@ -393,6 +393,48 @@ def test_pytorch_cuda_manual_seed_without_manual_seed_all(source, expected):
 
 
 @pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("torch.bincount(x)", [("R130", "review")]),
+        ("torch.Tensor.bincount(x)", [("R130", "review")]),
+        ("torch.Tensor.index_add_(x, 0, idx, src)", [("R130", "review")]),
+        ("x.index_add_(0, idx, src)", [("R130", "review")]),
+        ("torch.index_add_(x, 0, idx, src)", [("R130", "review")]),
+        ("torch.index_add(x, 0, idx, src)", [("R130", "review")]),
+        ("torch.Tensor.scatter_add_(x, 0, idx, src)", [("R130", "review")]),
+        ("x.scatter_add_(0, idx, src)", [("R130", "review")]),
+        ("torch.scatter_add_(x, 0, idx, src)", [("R130", "review")]),
+        ("torch.scatter_add(x, 0, idx, src)", [("R130", "review")]),
+        ("torch.nn.functional.ctc_loss(log_probs, targets, in_len, tg_len)", [("R130", "review")]),
+        ("torch.nn.CTCLoss()", [("R130", "review")]),
+        ("torch.nn.functional.interpolate(x, mode='bilinear')", [("R130", "review")]),
+        ("torch.nn.functional.interpolate(x, mode='bicubic')", [("R130", "review")]),
+        ("torch.nn.functional.interpolate(x, (10, 10), None, 'bilinear')", [("R130", "review")]),
+        ("torch.nn.functional.interpolate(x, mode='nearest')", []),
+        ("torch.nn.functional.interpolate(x, size=10)", []),
+        ("torch.nn.functional.interpolate(x, mode=dyn)", [("R190", "review")]),
+        ("torch.nn.functional.interpolate(x, **options)", [("R190", "review")]),
+        ("from torch import bincount\nbincount(x)", [("R130", "review")]),
+        ("from torch.nn import functional as F\nF.ctc_loss(lp, t, il, tl)", [("R130", "review")]),
+        (
+            "from torch.nn import functional as F\nF.interpolate(x, mode='bilinear')",
+            [("R130", "review")],
+        ),
+        (
+            "from torch.nn.functional import interpolate\ninterpolate(x, mode='bicubic')",
+            [("R130", "review")],
+        ),
+    ],
+)
+def test_pytorch_cuda_atomic_add(source, expected):
+    assert findings("import torch\n" + source) == expected
+
+
+def test_numpy_bincount_not_flagged_as_cuda_atomic_add():
+    assert findings("import numpy as np\nnp.bincount(x)") == []
+
+
+@pytest.mark.parametrize(
     "namespace",
     ["random", "random.experimental", "compat.v1.random", "compat.v1.random.experimental"],
 )
@@ -450,6 +492,7 @@ def test_lightning_namespaces_and_modes(namespace, arguments, expected):
         ("torch", "lib.use_deterministic_algorithms(False)", "R110"),
         ("torch", "lib.use_deterministic_algorithms(True)", "R120"),
         ("torch", "lib.cuda.manual_seed(42)", "R124"),
+        ("torch", "lib.bincount(x)", "R130"),
     ],
 )
 def test_framework_aliases_shadowing_and_justified_suppression(module, call, code):

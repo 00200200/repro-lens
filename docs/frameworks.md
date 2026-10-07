@@ -55,7 +55,7 @@ Supported: `LGBMModel`, `LGBMClassifier`, `LGBMRegressor`, `LGBMRanker` in
 See [LightGBM's determinism guidance](https://lightgbm.readthedocs.io/en/stable/Parameters.html#deterministic)
 (4.7.0 documentation). Different hardware/builds/versions still need separate validation.
 
-## PyTorch — R106, R107, R110, R116, R120, R124
+## PyTorch — R106, R107, R110, R116, R120, R124, R130
 
 ```python
 import os
@@ -80,6 +80,10 @@ torch.cuda.manual_seed(42)  # R124 review: only the current GPU RNG is seeded.
 torch.cuda.manual_seed_all(42)  # No R124: every visible GPU is seeded.
 torch.cuda.manual_seed(42)
 torch.cuda.manual_seed_all(42)  # No R124: manual_seed_all appears in this file.
+torch.bincount(x)  # R130 review: non-deterministic CUDA atomicAdd accumulation.
+torch.Tensor.index_add_(x, 0, idx, source)  # R130 review: non-deterministic CUDA atomicAdd.
+torch.nn.functional.interpolate(x, mode="bilinear")  # R130 review: bilinear uses atomicAdd.
+torch.nn.functional.interpolate(x, mode="nearest")  # No R130: nearest mode is deterministic.
 ```
 
 R106 checks `random_split`, explicitly shuffled `DataLoader` calls, and the stdlib
@@ -114,7 +118,13 @@ is accepted; order relative to the call is not checked, and CUDA initialization 
 is not proven. R124 reviews `torch.cuda.manual_seed(...)` (including imported aliases)
 when the same file never calls `torch.cuda.manual_seed_all(...)`. A `manual_seed_all`
 call anywhere in the file is accepted; order relative to `manual_seed` is not checked,
-and single-GPU affinity (`CUDA_VISIBLE_DEVICES`, `set_device`) is not inferred. See
+and single-GPU affinity (`CUDA_VISIBLE_DEVICES`, `set_device`) is not inferred.
+R130 reviews direct calls to operations that rely on CUDA floating-point `atomicAdd`
+(`torch.Tensor.index_add_`, `torch.Tensor.scatter_add_`, `torch.bincount`,
+`torch.nn.functional.ctc_loss`, and `torch.nn.functional.interpolate` with `bilinear` or `bicubic`
+modes). Because floating-point addition is non-associative, concurrent GPU threads accumulating
+into the same memory location produce nondeterministic results across runs. Consider
+`torch.use_deterministic_algorithms(True)` or CPU execution for exact reproducibility. See
 [PyTorch reproducibility](https://docs.pytorch.org/docs/2.8/notes/randomness.html),
 [`use_deterministic_algorithms`](https://docs.pytorch.org/docs/2.8/generated/torch.use_deterministic_algorithms.html)
 and [data-loading signatures](https://docs.pytorch.org/docs/2.8/data.html) (2.8 reference).
