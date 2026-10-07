@@ -7,7 +7,7 @@ import io
 import re
 import symtable
 import tokenize
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from . import frameworks
 from .parameters import ParameterDictionaries
@@ -47,6 +47,10 @@ RULES = {
     "R101": "A known randomized scikit-learn call has no explicit random_state.",
     "R102": "A new NumPy generator is initialized without explicit entropy control.",
     "R103": "A new Python Random instance is initialized without explicit entropy control.",
+    "R126": (
+        "Fitting a transformer before train_test_split() leaks test set distribution into "
+        "the training pipeline."
+    ),
     "R128": (
         "Order-dependent iteration over an unsorted set produces non-deterministic order "
         "across runs."
@@ -169,6 +173,114 @@ def _parameters_defaulting_to_none(args_node: ast.arguments) -> set[str]:
     return tainted
 
 
+TRANSFORMER_CLASSES = {
+    # scalers & normalizers
+    "StandardScaler",
+    "MinMaxScaler",
+    "MaxAbsScaler",
+    "RobustScaler",
+    "Normalizer",
+    "QuantileTransformer",
+    "PowerTransformer",
+    # imputers
+    "SimpleImputer",
+    "KNNImputer",
+    "IterativeImputer",
+    "MissingIndicator",
+    # encoders
+    "OneHotEncoder",
+    "OrdinalEncoder",
+    "TargetEncoder",
+    "LabelEncoder",
+    # decomposition & dimensionality reduction
+    "PCA",
+    "IncrementalPCA",
+    "KernelPCA",
+    "TruncatedSVD",
+    "FastICA",
+    "FactorAnalysis",
+    "NMF",
+    "MiniBatchNMF",
+    "DictionaryLearning",
+    "MiniBatchDictionaryLearning",
+    "LatentDirichletAllocation",
+    "TSNE",
+    "Isomap",
+    "LocallyLinearEmbedding",
+    "MDS",
+    "SpectralEmbedding",
+    # feature engineering & preprocessing
+    "PolynomialFeatures",
+    "SplineTransformer",
+    "KBinsDiscretizer",
+    "Binarizer",
+    "FunctionTransformer",
+    # feature selection
+    "SelectKBest",
+    "SelectPercentile",
+    "SelectFpr",
+    "SelectFdr",
+    "SelectFwe",
+    "GenericUnivariateSelect",
+    "RFE",
+    "RFECV",
+    "SelectFromModel",
+    "SequentialFeatureSelector",
+    "VarianceThreshold",
+    # text & feature extraction
+    "TfidfVectorizer",
+    "CountVectorizer",
+    "HashingVectorizer",
+    "FeatureHasher",
+    "DictVectorizer",
+    # composition
+    "ColumnTransformer",
+    "Pipeline",
+    "FeatureUnion",
+}
+TRANSFORMER_FACTORIES = {"make_pipeline", "make_column_transformer", "make_union"}
+
+
+@dataclass
+class _ScopeLeakageTracker:
+    transformers: set[str] = field(default_factory=set)
+    fit_calls: list[tuple[ast.Call, str, set[str], str]] = field(default_factory=list)
+    split_calls: list[tuple[ast.Call, set[str]]] = field(default_factory=list)
+    lineage: dict[str, set[str]] = field(default_factory=dict)
+
+
+def _extract_dataset_var(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+        return node.value.id
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+        if node.attr in {"values", "to_numpy", "loc", "iloc"}:
+            return node.value.id
+        return f"{node.value.id}.{node.attr}"
+    return None
+
+
+def _extract_split_vars(node: ast.Call) -> set[str]:
+    vars_found = set()
+    for arg in node.args:
+        v = _extract_dataset_var(arg)
+        if v:
+            vars_found.add(v)
+    for kw in node.keywords:
+        if kw.arg and kw.arg not in {
+            "test_size",
+            "train_size",
+            "random_state",
+            "shuffle",
+            "stratify",
+        }:
+            v = _extract_dataset_var(kw.value)
+            if v:
+                vars_found.add(v)
+    return vars_found
+
+
 class Scanner(ast.NodeVisitor):
     def __init__(self, path, symbols, tree, custom_rules: tuple[CustomRule, ...] = ()):
         self.path = path
@@ -194,6 +306,8 @@ class Scanner(ast.NodeVisitor):
         self.cuda_manual_seed = []
         self.cuda_manual_seed_all = False
         self.set_variables = set()
+        self.leakage_trackers = [_ScopeLeakageTracker()]
+        self._current_assign_targets = []
         self.parameters = ParameterDictionaries(tree)
         self.custom_rules = custom_rules
         self.function_locals = {}
@@ -204,6 +318,70 @@ class Scanner(ast.NodeVisitor):
                 key = (scope.get_name(), scope.get_lineno(), frozenset(scope.get_parameters()))
                 self.function_locals[key] = scope.get_locals()
             pending.extend(scope.get_children())
+
+    def _is_transformer_instantiation(self, node: ast.AST) -> bool:
+        if not isinstance(node, ast.Call):
+            return False
+        if isinstance(node.func, ast.Name):
+            if node.func.id in TRANSFORMER_CLASSES or node.func.id in TRANSFORMER_FACTORIES:
+                return True
+            qualified = self.bindings.get(node.func.id)
+            if qualified and (
+                qualified.split(".")[-1] in TRANSFORMER_CLASSES
+                or qualified.split(".")[-1] in TRANSFORMER_FACTORIES
+            ):
+                return True
+        elif isinstance(node.func, ast.Attribute):
+            if node.func.attr in TRANSFORMER_CLASSES or node.func.attr in TRANSFORMER_FACTORIES:
+                return True
+            qualified = self.qualified(node.func)
+            if qualified and (
+                qualified.split(".")[-1] in TRANSFORMER_CLASSES
+                or qualified.split(".")[-1] in TRANSFORMER_FACTORIES
+            ):
+                return True
+        return False
+
+    def _is_train_test_split(self, node: ast.Call) -> bool:
+        name = self.qualified(node.func)
+        if name == "sklearn.model_selection.train_test_split":
+            return True
+        if isinstance(node.func, ast.Name) and node.func.id == "train_test_split":
+            return True
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "train_test_split":
+            return True
+        return False
+
+    def _check_leakage(self, tracker: _ScopeLeakageTracker):
+        if not tracker.fit_calls or not tracker.split_calls:
+            return
+
+        for fit_node, input_var, output_vars, method in tracker.fit_calls:
+            fit_pos = (fit_node.lineno, fit_node.col_offset)
+            for split_node, split_vars in tracker.split_calls:
+                split_pos = (split_node.lineno, split_node.col_offset)
+                if split_pos > fit_pos:
+                    all_split_lineage = set(split_vars)
+                    for svar in split_vars:
+                        all_split_lineage |= tracker.lineage.get(svar, set())
+
+                    if input_var in all_split_lineage or any(
+                        out in all_split_lineage for out in output_vars
+                    ):
+                        self.emit(
+                            fit_node,
+                            "R126",
+                            f"Calling .{method}() on dataset '{input_var}' before "
+                            "train_test_split() leaks test set information into training pipeline.",
+                            "Split the dataset with train_test_split() before fitting "
+                            "transformers on training data only.",
+                            severity="warning",
+                        )
+                        break
+
+    def flush_leakage(self):
+        while self.leakage_trackers:
+            self._check_leakage(self.leakage_trackers.pop())
 
     def _matches_custom_rule(self, node, name, rule, kwargs, dynamic):
         if not rule.call:
@@ -360,11 +538,15 @@ class Scanner(ast.NodeVisitor):
                 self.bindings[alias.asname or alias.name] = f"{node.module}.{alias.name}"
 
     def visit_Assign(self, node):
+        self._current_assign_targets = [name for t in node.targets for name in bound_names(t)]
         self.visit(node.value)
+        self._current_assign_targets = []
         is_none = (isinstance(node.value, ast.Constant) and node.value.value is None) or (
             isinstance(node.value, ast.Name) and node.value.id in self.none_tainted
         )
         is_set = self._is_unsorted_set(node.value)
+        is_transformer = self._is_transformer_instantiation(node.value)
+        current_tracker = self.leakage_trackers[-1] if self.leakage_trackers else None
         for target in node.targets:
             frameworks.check_assignment(node, self.qualified(target), node.value, self.emit)
             self.cublas_workspace |= frameworks.sets_cublas_workspace(target, self.qualified)
@@ -378,19 +560,29 @@ class Scanner(ast.NodeVisitor):
                     self.set_variables.add(name)
                 else:
                     self.set_variables.discard(name)
+                if current_tracker is not None:
+                    if is_transformer:
+                        current_tracker.transformers.add(name)
+                    else:
+                        current_tracker.transformers.discard(name)
 
     def visit_AnnAssign(self, node):
+        current_tracker = self.leakage_trackers[-1] if self.leakage_trackers else None
         if node.value:
+            self._current_assign_targets = list(bound_names(node.target))
             self.visit(node.value)
+            self._current_assign_targets = []
             frameworks.check_assignment(node, self.qualified(node.target), node.value, self.emit)
             self.cublas_workspace |= frameworks.sets_cublas_workspace(node.target, self.qualified)
             is_none = (isinstance(node.value, ast.Constant) and node.value.value is None) or (
                 isinstance(node.value, ast.Name) and node.value.id in self.none_tainted
             )
             is_set = self._is_unsorted_set(node.value)
+            is_transformer = self._is_transformer_instantiation(node.value)
         else:
             is_none = False
             is_set = False
+            is_transformer = False
         for name in bound_names(node.target):
             self.bindings.pop(name, None)
             if is_none:
@@ -401,16 +593,30 @@ class Scanner(ast.NodeVisitor):
                 self.set_variables.add(name)
             else:
                 self.set_variables.discard(name)
+            if current_tracker is not None:
+                if is_transformer:
+                    current_tracker.transformers.add(name)
+                else:
+                    current_tracker.transformers.discard(name)
 
     def visit_NamedExpr(self, node):
+        self._current_assign_targets = list(bound_names(node.target))
         self.visit(node.value)
+        self._current_assign_targets = []
         is_set = self._is_unsorted_set(node.value)
+        is_transformer = self._is_transformer_instantiation(node.value)
+        current_tracker = self.leakage_trackers[-1] if self.leakage_trackers else None
         for name in bound_names(node.target):
             self.bindings.pop(name, None)
             if is_set:
                 self.set_variables.add(name)
             else:
                 self.set_variables.discard(name)
+            if current_tracker is not None:
+                if is_transformer:
+                    current_tracker.transformers.add(name)
+                else:
+                    current_tracker.transformers.discard(name)
 
     def visit_AugAssign(self, node):
         self.visit(node.value)
@@ -516,8 +722,11 @@ class Scanner(ast.NodeVisitor):
         # Parameters distinguish a function from a same-line comprehension in its defaults.
         for name in self.function_locals[node.name, node.lineno, parameters]:
             self.bindings.pop(name, None)
+        self.leakage_trackers.append(_ScopeLeakageTracker())
         for statement in node.body:
             self.visit(statement)
+        if self.leakage_trackers:
+            self._check_leakage(self.leakage_trackers.pop())
         self.none_tainted = saved_tainted
         self._leave_code_scope(saved)
 
@@ -623,6 +832,54 @@ class Scanner(ast.NodeVisitor):
         dynamic = any(kw.arg is None for kw in node.keywords) or any(
             isinstance(arg, ast.Starred) for arg in node.args
         )
+
+        if self._is_train_test_split(node):
+            split_vars = _extract_split_vars(node)
+            if self.leakage_trackers and split_vars:
+                self.leakage_trackers[-1].split_calls.append((node, split_vars))
+
+        if isinstance(node.func, ast.Attribute) and node.func.attr in {"fit", "fit_transform"}:
+            method = node.func.attr
+            current_tracker = self.leakage_trackers[-1] if self.leakage_trackers else None
+            is_transformer_fit = False
+            if method == "fit_transform":
+                is_transformer_fit = True
+            elif current_tracker is not None:
+                if (
+                    self._is_transformer_instantiation(node.func.value)
+                    or (
+                        isinstance(node.func.value, ast.Name)
+                        and (
+                            node.func.value.id in current_tracker.transformers
+                            or any(
+                                kw in node.func.value.id.lower()
+                                for kw in ("scaler", "imputer", "encoder", "transformer", "pca")
+                            )
+                        )
+                    )
+                    or (
+                        isinstance(node.func.value, ast.Attribute)
+                        and any(
+                            kw in node.func.value.attr.lower()
+                            for kw in ("scaler", "imputer", "encoder", "transformer", "pca")
+                        )
+                    )
+                ):
+                    is_transformer_fit = True
+
+            if is_transformer_fit and current_tracker is not None:
+                arg0 = node.args[0] if node.args else kwargs.get("X")
+                if arg0 is not None:
+                    dataset_var = _extract_dataset_var(arg0)
+                    if dataset_var:
+                        output_vars = set(self._current_assign_targets)
+                        current_tracker.fit_calls.append((node, dataset_var, output_vars, method))
+                        for out in output_vars:
+                            ancestors = {dataset_var} | current_tracker.lineage.get(
+                                dataset_var, set()
+                            )
+                            current_tracker.lineage[out] = ancestors
+
         if name in SKLEARN:
             kind = SKLEARN[name]
             shuffle = literal(kwargs.get("shuffle"))
@@ -765,6 +1022,7 @@ def analyze(
     rules_tuple = tuple(custom_rules)
     scanner = Scanner(path, symbols, tree, custom_rules=rules_tuple)
     scanner.visit(tree)
+    scanner.flush_leakage()
     frameworks.report_global_rng(scanner.global_uses, scanner.seeded, scanner.emit)
     if scanner.imports_pandas:
         frameworks.report_pandas_sample(scanner.samples, scanner.seeded, scanner.emit)
@@ -787,6 +1045,7 @@ def analyze(
         "R101",
         "R102",
         "R103",
+        "R126",
         "R128",
         "R131",
         "R190",

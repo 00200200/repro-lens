@@ -732,3 +732,131 @@ def test_r128_severity_and_suppression():
     assert active[0].code == "R128"
     assert active[0].severity == "review"
     assert [(f.code, f.line) for f in suppressed] == [("R128", 2)]
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        (
+            "from sklearn.preprocessing import StandardScaler\n"
+            "from sklearn.model_selection import train_test_split\n"
+            "scaler = StandardScaler()\n"
+            "X = scaler.fit_transform(X)\n"
+            "X_train, X_test = train_test_split(X, random_state=42)\n",
+            ["R126"],
+        ),
+        (
+            "from sklearn.preprocessing import StandardScaler\n"
+            "from sklearn.model_selection import train_test_split\n"
+            "X_scaled = StandardScaler().fit_transform(X)\n"
+            "X_train, X_test = train_test_split(X_scaled, random_state=42)\n",
+            ["R126"],
+        ),
+        (
+            "from sklearn.impute import SimpleImputer\n"
+            "from sklearn.model_selection import train_test_split\n"
+            "imputer = SimpleImputer()\n"
+            "imputer.fit(df)\n"
+            "train_df, test_df = train_test_split(df, random_state=42)\n",
+            ["R126"],
+        ),
+        (
+            "from sklearn.decomposition import PCA\n"
+            "from sklearn.model_selection import train_test_split\n"
+            "pca = PCA(n_components=5)\n"
+            "X_pca = pca.fit_transform(X)\n"
+            "X_train, X_test = train_test_split(X_pca, random_state=42)\n",
+            ["R126"],
+        ),
+        (
+            "from sklearn.preprocessing import StandardScaler\n"
+            "from sklearn.model_selection import train_test_split\n"
+            "X_train, X_test = train_test_split(X, random_state=42)\n"
+            "scaler = StandardScaler()\n"
+            "X_train = scaler.fit_transform(X_train)\n"
+            "X_test = scaler.transform(X_test)\n",
+            [],
+        ),
+        (
+            "from sklearn.preprocessing import StandardScaler\n"
+            "scaler = StandardScaler()\n"
+            "X_scaled = scaler.fit_transform(X)\n",
+            [],
+        ),
+        (
+            "from sklearn.linear_model import LogisticRegression\n"
+            "from sklearn.model_selection import train_test_split\n"
+            "clf = LogisticRegression()\n"
+            "clf.fit(X, y)\n"
+            "X_train, X_test = train_test_split(X, random_state=42)\n",
+            [],
+        ),
+        (
+            "from sklearn.preprocessing import StandardScaler\n"
+            "from sklearn.model_selection import train_test_split\n"
+            "scaler = StandardScaler()\n"
+            "X1_scaled = scaler.fit_transform(X1)\n"
+            "X_train, X_test = train_test_split(X2, random_state=42)\n",
+            [],
+        ),
+    ],
+    ids=[
+        "scaler-fit-transform-same-var",
+        "chained-scaler-fit-transform-out-var",
+        "imputer-fit-then-split",
+        "pca-fit-transform-then-split",
+        "clean-split-then-fit-on-train",
+        "no-split-called",
+        "classifier-fit-no-transformer",
+        "split-different-dataset",
+    ],
+)
+def test_r126_data_leakage(source, expected):
+    assert codes(source) == expected
+
+
+def test_r126_lineage_chaining():
+    source = (
+        "from sklearn.impute import SimpleImputer\n"
+        "from sklearn.preprocessing import StandardScaler\n"
+        "from sklearn.model_selection import train_test_split\n"
+        "imputer = SimpleImputer()\n"
+        "X_imp = imputer.fit_transform(X)\n"
+        "scaler = StandardScaler()\n"
+        "X_scaled = scaler.fit_transform(X_imp)\n"
+        "X_train, X_test = train_test_split(X_scaled, random_state=42)\n"
+    )
+    assert codes(source) == ["R126", "R126"]
+
+
+def test_r126_scope_isolation():
+    source = (
+        "from sklearn.preprocessing import StandardScaler\n"
+        "from sklearn.model_selection import train_test_split\n"
+        "def leaky_pipeline():\n"
+        "    scaler = StandardScaler()\n"
+        "    X_scaled = scaler.fit_transform(X)\n"
+        "    return train_test_split(X_scaled, random_state=42)\n"
+        "def clean_pipeline():\n"
+        "    X_tr, X_te = train_test_split(X, random_state=42)\n"
+        "    scaler = StandardScaler()\n"
+        "    return scaler.fit_transform(X_tr), scaler.transform(X_te)\n"
+    )
+    assert codes(source) == ["R126"]
+
+
+def test_r126_severity_and_suppression():
+    source = (
+        "from sklearn.preprocessing import StandardScaler\n"
+        "from sklearn.model_selection import train_test_split\n"
+        "scaler = StandardScaler()\n"
+        "X_scaled = scaler.fit_transform(X)\n"
+        "X_supp = scaler.fit_transform(X)  "
+        "# repro-lens: ignore[R126] -- Preprocessing baseline comparison.\n"
+        "X_train, X_test = train_test_split(X, random_state=42)\n"
+    )
+    active, suppressed = analyze(source, "train.py")
+    assert len(active) == 1
+    assert active[0].code == "R126"
+    assert active[0].severity == "warning"
+    assert [(f.code, f.line) for f in suppressed] == [("R126", 5)]

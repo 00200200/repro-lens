@@ -23,6 +23,7 @@
 | R119 | review | CatBoost estimator lacks explicit random_seed or random_state |
 | R120 | review | PyTorch deterministic algorithms enabled without CUBLAS_WORKSPACE_CONFIG |
 | R124 | review | `torch.cuda.manual_seed` used without `torch.cuda.manual_seed_all` |
+| R126 | warning | Pre-split transformer fitting leaks test set distribution into training pipeline |
 | R127 | review | Hugging Face dataset `shuffle()` has no explicit seed |
 | R128 | review | Order-dependent iteration over an unsorted set produces non-deterministic order |
 | R129 | review | Dask DataFrame `sample()` or `shuffle()` lacks explicit random_state or seed |
