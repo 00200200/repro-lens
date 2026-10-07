@@ -24,6 +24,7 @@ RULES = {
     "R120": "PyTorch deterministic algorithms are enabled without CUBLAS_WORKSPACE_CONFIG.",
     "R124": "torch.cuda.manual_seed seeds only the current GPU without manual_seed_all.",
     "R127": "Hugging Face dataset shuffle() has no explicit seed; review random shuffling.",
+    "R130": "PyTorch operation uses non-deterministic CUDA atomicAdd; review GPU reproducibility.",
 }
 
 MISSING = object()
@@ -753,6 +754,71 @@ def report_cuda_manual_seed(calls, seeded_all, emit):
         )
 
 
+TORCH_ATOMIC_ADD_NAMES = {
+    "torch.bincount",
+    "torch.Tensor.bincount",
+    "torch.Tensor.index_add_",
+    "torch.Tensor.scatter_add_",
+    "torch.Tensor.index_add",
+    "torch.Tensor.scatter_add",
+    "torch.index_add",
+    "torch.index_add_",
+    "torch.scatter_add",
+    "torch.scatter_add_",
+    "torch.nn.functional.ctc_loss",
+    "torch.nn.CTCLoss",
+}
+
+TORCH_ATOMIC_ADD_ATTRS = {
+    "index_add_",
+    "scatter_add_",
+    "index_add",
+    "scatter_add",
+}
+
+
+def check_torch_interpolate(node, name, emit, resolve):
+    options = Arguments.call(node, ("input", "size", "scale_factor", "mode"), resolve)
+    mode = options.value("mode", "nearest")
+    if mode is UNKNOWN:
+        unresolved(node, name, emit)
+    elif isinstance(mode, str) and mode.lower() in {"bilinear", "bicubic"}:
+        emit(
+            node,
+            "R130",
+            f"{name} with mode={mode!r} uses non-deterministic CUDA atomicAdd on GPU.",
+            "CUDA floating-point atomicAdd introduces non-deterministic accumulation order due to "
+            "thread race conditions. Consider torch.use_deterministic_algorithms(True) or CPU "
+            "execution for exact reproducibility.",
+            "review",
+        )
+
+
+def check_torch_atomic_add(node, name, emit):
+    target = None
+    if name in TORCH_ATOMIC_ADD_NAMES:
+        target = name
+    elif (
+        name is None
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in TORCH_ATOMIC_ADD_ATTRS
+    ):
+        target = f"{node.func.attr}()"
+
+    if target is not None:
+        emit(
+            node,
+            "R130",
+            f"{target} uses non-deterministic CUDA atomicAdd on GPU.",
+            "CUDA floating-point atomicAdd introduces non-deterministic accumulation order due to "
+            "thread race conditions. Consider torch.use_deterministic_algorithms(True) or CPU "
+            "execution for exact reproducibility.",
+            "review",
+        )
+        return True
+    return False
+
+
 def check_call(node, name, emit, resolve=None, qualified=None):
     if name in XGBOOST or name in {
         "xgboost.train",
@@ -795,6 +861,10 @@ def check_call(node, name, emit, resolve=None, qualified=None):
         check_hf_training_args(node, name, emit, resolve)
     elif name == "torch.use_deterministic_algorithms":
         check_algorithms(node, name, emit, resolve)
+    elif name == "torch.nn.functional.interpolate":
+        check_torch_interpolate(node, name, emit, resolve)
+    elif check_torch_atomic_add(node, name, emit):
+        pass
 
 
 def check_assignment(node, name, value, emit):

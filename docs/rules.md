@@ -24,6 +24,7 @@
 | R120 | review | PyTorch deterministic algorithms enabled without CUBLAS_WORKSPACE_CONFIG |
 | R124 | review | `torch.cuda.manual_seed` used without `torch.cuda.manual_seed_all` |
 | R127 | review | Hugging Face dataset `shuffle()` has no explicit seed |
+| R130 | review | PyTorch operation uses non-deterministic CUDA atomicAdd accumulation |
 | R131 | review | Notebook cells were executed out of order; rerun from top to bottom before committing |
 | R190 | review | Dynamic arguments or framework configuration prevent a decision |
 | P201 | error | A file required by this project's policy is missing |
@@ -51,7 +52,7 @@ When `$GITHUB_STEP_SUMMARY` is set (as in GitHub Actions), `check`, `verify` and
 `compare` also append a markdown job summary: a findings table for static checks, and
 collapsible `<details>` sections for verify/compare output differences.
 
-See [framework coverage](frameworks.md) for R104–R124: exact APIs, primary sources,
+See [framework coverage](frameworks.md) for R104–R130: exact APIs, primary sources,
 passing examples and limits. These rules share the CLI, hook and skill engine.
 
 Supported sklearn APIs are the explicit registry in `analysis.py`:
