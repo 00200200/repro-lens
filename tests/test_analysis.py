@@ -642,3 +642,93 @@ def test_taint_tracking_numpy_and_random_generators():
 
     source_random = "import random\ndef make_rand(x=None):\n    return random.Random(x)\n"
     assert codes(source_random) == ["R103"]
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("vocab = {token: idx for idx, token in enumerate(set(tokens))}", ["R128"]),
+        ("vocab = {token: idx for idx, token in enumerate(sorted(set(tokens)))}", []),
+        ("vocab = {token: idx for idx, token in enumerate(list(set(tokens)))}", ["R128"]),
+        ("vocab = {token: idx for idx, token in enumerate(sorted(tokens))}", []),
+        ("mapping = dict(enumerate(set(items)))", ["R128"]),
+        ("mapping = dict(enumerate(sorted(set(items))))", []),
+        ("mapping = dict(zip(set(tokens), range(10)))", ["R128"]),
+        ("mapping = dict(zip(sorted(set(tokens)), range(10)))", []),
+        (
+            "vocab = {}\nfor token in set(tokens):\n    vocab[token] = len(vocab)\n",
+            ["R128"],
+        ),
+        (
+            "vocab = {}\nfor token in sorted(set(tokens)):\n    vocab[token] = len(vocab)\n",
+            [],
+        ),
+        (
+            "vocab = {}\ni = 0\nfor token in set(tokens):\n    vocab[token] = i\n    i += 1\n",
+            ["R128"],
+        ),
+        (
+            "vocab = []\nfor token in set(tokens):\n    vocab.append(token)\n",
+            ["R128"],
+        ),
+        ("first = list(set(items))[0]", ["R128"]),
+        ("idx = list(set(items)).index('target')", ["R128"]),
+        ("first = sorted(set(items))[0]", []),
+        ("for x in set(items):\n    print(x)\n", []),
+        ("total = sum(len(x) for x in set(items))", []),
+    ],
+    ids=[
+        "enumerate-set",
+        "enumerate-sorted-set",
+        "enumerate-list-set",
+        "enumerate-sorted-tokens",
+        "dict-enumerate-set",
+        "dict-enumerate-sorted-set",
+        "zip-set-range",
+        "zip-sorted-range",
+        "for-set-len-vocab",
+        "for-sorted-set-len-vocab",
+        "for-set-counter",
+        "for-set-append",
+        "subscript-list-set",
+        "index-call-list-set",
+        "subscript-sorted-set",
+        "for-set-print",
+        "generator-sum-len",
+    ],
+)
+def test_r128_unsorted_set_iteration(source, expected):
+    assert codes(source) == expected
+
+
+def test_r128_variable_tracking():
+    source_violating = (
+        "tokens_set = set(tokens)\nvocab = {token: idx for idx, token in enumerate(tokens_set)}\n"
+    )
+    assert codes(source_violating) == ["R128"]
+
+    source_sorted = (
+        "tokens_set = sorted(set(tokens))\n"
+        "vocab = {token: idx for idx, token in enumerate(tokens_set)}\n"
+    )
+    assert codes(source_sorted) == []
+
+    source_mutated_sort = (
+        "classes = list(set(labels))\n"
+        "classes.sort()\n"
+        "class_to_id = {c: i for i, c in enumerate(classes)}\n"
+    )
+    assert codes(source_mutated_sort) == []
+
+
+def test_r128_severity_and_suppression():
+    source = (
+        "vocab = {token: idx for idx, token in enumerate(set(tokens))}\n"
+        "suppressed = {token: idx for idx, token in enumerate(set(tokens))}  "
+        "# repro-lens: ignore[R128] -- Intentional non-determinism.\n"
+    )
+    active, suppressed = analyze(source, "train.py")
+    assert len(active) == 1
+    assert active[0].code == "R128"
+    assert active[0].severity == "review"
+    assert [(f.code, f.line) for f in suppressed] == [("R128", 2)]

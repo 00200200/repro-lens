@@ -47,6 +47,10 @@ RULES = {
     "R101": "A known randomized scikit-learn call has no explicit random_state.",
     "R102": "A new NumPy generator is initialized without explicit entropy control.",
     "R103": "A new Python Random instance is initialized without explicit entropy control.",
+    "R128": (
+        "Order-dependent iteration over an unsorted set produces non-deterministic order "
+        "across runs."
+    ),
     "R131": (
         "Notebook cells were executed out of order; rerun from top to bottom before committing."
     ),
@@ -189,6 +193,7 @@ class Scanner(ast.NodeVisitor):
         self.deterministic_algorithms = []
         self.cuda_manual_seed = []
         self.cuda_manual_seed_all = False
+        self.set_variables = set()
         self.parameters = ParameterDictionaries(tree)
         self.custom_rules = custom_rules
         self.function_locals = {}
@@ -232,13 +237,13 @@ class Scanner(ast.NodeVisitor):
             self.code_bindings = bindings
 
     def _enter_code_scope(self, enclosing):
-        saved = self.bindings, self.code_bindings, self.class_depth
+        saved = self.bindings, self.code_bindings, self.class_depth, self.set_variables.copy()
         self.class_depth = 0
         self._set_bindings(enclosing.copy())
         return saved
 
     def _leave_code_scope(self, saved):
-        self.bindings, self.code_bindings, self.class_depth = saved
+        self.bindings, self.code_bindings, self.class_depth, self.set_variables = saved
 
     def _enclosing_code(self):
         return self.code_bindings if self.class_depth else self.bindings
@@ -257,6 +262,80 @@ class Scanner(ast.NodeVisitor):
             parent = self.qualified(node.value)
             return f"{parent}.{node.attr}" if parent else None
         return None
+
+    def _is_builtin_call(self, node, names):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            return False
+        targets = (names,) if isinstance(names, str) else names
+        return node.func.id in targets and self.bindings.get(node.func.id) is None
+
+    def _is_unsorted_set(self, node):
+        if isinstance(node, ast.Call):
+            if self._is_builtin_call(node, "sorted"):
+                return False
+            if self._is_builtin_call(node, "set"):
+                return True
+            if self._is_builtin_call(node, ("list", "tuple")) and node.args:
+                return self._is_unsorted_set(node.args[0])
+        if isinstance(node, ast.Set):
+            return True
+        if isinstance(node, ast.Name) and node.id in self.set_variables:
+            return True
+        return False
+
+    def _check_for_indexing(self, node):
+        target_names = set(bound_names(node.target))
+        for stmt in node.body:
+            if isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Subscript):
+                        slice_names = {
+                            n.id for n in ast.walk(target.slice) if isinstance(n, ast.Name)
+                        }
+                        value_names = {
+                            n.id for n in ast.walk(stmt.value) if isinstance(n, ast.Name)
+                        }
+                        if (target_names & slice_names) or (target_names & value_names):
+                            self.emit(
+                                node,
+                                "R128",
+                                "Iterating over an unsorted set in indexing logic produces "
+                                "non-deterministic order across runs.",
+                                "Wrap the set in sorted(...) before iterating or indexing.",
+                                severity="review",
+                            )
+                            return
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+                call = stmt.value
+                if isinstance(call.func, ast.Attribute) and call.func.attr == "append":
+                    arg_names = {
+                        n.id for arg in call.args for n in ast.walk(arg) if isinstance(n, ast.Name)
+                    }
+                    if target_names & arg_names:
+                        self.emit(
+                            node,
+                            "R128",
+                            "Iterating over an unsorted set in indexing logic produces "
+                            "non-deterministic order across runs.",
+                            "Wrap the set in sorted(...) before iterating or indexing.",
+                            severity="review",
+                        )
+                        return
+            if (
+                isinstance(stmt, ast.AugAssign)
+                and isinstance(stmt.op, ast.Add)
+                and isinstance(stmt.value, ast.Constant)
+                and stmt.value.value == 1
+            ):
+                self.emit(
+                    node,
+                    "R128",
+                    "Iterating over an unsorted set in indexing logic produces "
+                    "non-deterministic order across runs.",
+                    "Wrap the set in sorted(...) before iterating or indexing.",
+                    severity="review",
+                )
+                return
 
     def visit_Import(self, node):
         for alias in node.names:
@@ -285,6 +364,7 @@ class Scanner(ast.NodeVisitor):
         is_none = (isinstance(node.value, ast.Constant) and node.value.value is None) or (
             isinstance(node.value, ast.Name) and node.value.id in self.none_tainted
         )
+        is_set = self._is_unsorted_set(node.value)
         for target in node.targets:
             frameworks.check_assignment(node, self.qualified(target), node.value, self.emit)
             self.cublas_workspace |= frameworks.sets_cublas_workspace(target, self.qualified)
@@ -294,6 +374,10 @@ class Scanner(ast.NodeVisitor):
                     self.none_tainted.add(name)
                 else:
                     self.none_tainted.discard(name)
+                if is_set:
+                    self.set_variables.add(name)
+                else:
+                    self.set_variables.discard(name)
 
     def visit_AnnAssign(self, node):
         if node.value:
@@ -303,33 +387,60 @@ class Scanner(ast.NodeVisitor):
             is_none = (isinstance(node.value, ast.Constant) and node.value.value is None) or (
                 isinstance(node.value, ast.Name) and node.value.id in self.none_tainted
             )
+            is_set = self._is_unsorted_set(node.value)
         else:
             is_none = False
+            is_set = False
         for name in bound_names(node.target):
             self.bindings.pop(name, None)
             if is_none:
                 self.none_tainted.add(name)
             else:
                 self.none_tainted.discard(name)
+            if is_set:
+                self.set_variables.add(name)
+            else:
+                self.set_variables.discard(name)
 
     def visit_NamedExpr(self, node):
         self.visit(node.value)
+        is_set = self._is_unsorted_set(node.value)
         for name in bound_names(node.target):
             self.bindings.pop(name, None)
+            if is_set:
+                self.set_variables.add(name)
+            else:
+                self.set_variables.discard(name)
 
     def visit_AugAssign(self, node):
         self.visit(node.value)
         for name in bound_names(node.target):
             self.bindings.pop(name, None)
+            self.set_variables.discard(name)
 
     def visit_For(self, node):
         self.visit(node.iter)
         for name in bound_names(node.target):
             self.bindings.pop(name, None)
+            self.set_variables.discard(name)
+        if self._is_unsorted_set(node.iter):
+            self._check_for_indexing(node)
         for statement in [*node.body, *node.orelse]:
             self.visit(statement)
 
     visit_AsyncFor = visit_For
+
+    def visit_Subscript(self, node):
+        if self._is_unsorted_set(node.value):
+            self.emit(
+                node,
+                "R128",
+                "Indexing into an unsorted set conversion produces non-deterministic order "
+                "across runs.",
+                "Wrap the set in sorted(...) before indexing.",
+                severity="review",
+            )
+        self.generic_visit(node)
 
     def visit_If(self, node):
         self.visit(node.test)
@@ -467,6 +578,47 @@ class Scanner(ast.NodeVisitor):
         if frameworks.is_cuda_manual_seed(name):
             self.cuda_manual_seed.append((node, name))
         self.cuda_manual_seed_all |= frameworks.is_cuda_manual_seed_all(name)
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "sort"
+            and isinstance(node.func.value, ast.Name)
+        ):
+            self.set_variables.discard(node.func.value.id)
+        if self._is_builtin_call(node, "enumerate") and node.args:
+            if self._is_unsorted_set(node.args[0]):
+                self.emit(
+                    node,
+                    "R128",
+                    "enumerate() over an unsorted set produces non-deterministic order "
+                    "across runs.",
+                    "Wrap the set in sorted(...) before iterating or indexing.",
+                    severity="review",
+                )
+        if self._is_builtin_call(node, "zip") and len(node.args) >= 2:
+            if any(self._is_unsorted_set(arg) for arg in node.args) and any(
+                self._is_builtin_call(arg, "range") for arg in node.args
+            ):
+                self.emit(
+                    node,
+                    "R128",
+                    "zip() pairing an unsorted set with range() produces non-deterministic order "
+                    "across runs.",
+                    "Wrap the set in sorted(...) before iterating or indexing.",
+                    severity="review",
+                )
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "index"
+            and self._is_unsorted_set(node.func.value)
+        ):
+            self.emit(
+                node,
+                "R128",
+                "Calling .index() on an unsorted set conversion produces non-deterministic "
+                "order across runs.",
+                "Wrap the set in sorted(...) before indexing.",
+                severity="review",
+            )
         kwargs = {kw.arg: kw.value for kw in node.keywords if kw.arg}
         dynamic = any(kw.arg is None for kw in node.keywords) or any(
             isinstance(arg, ast.Starred) for arg in node.args
@@ -635,6 +787,7 @@ def analyze(
         "R101",
         "R102",
         "R103",
+        "R128",
         "R131",
         "R190",
         *frameworks.RULES,
