@@ -301,6 +301,23 @@ Hugging Face `Dataset.shuffle` and `IterableDataset.shuffle` randomize item orde
 
 The receiver's type is not resolved at runtime. A call is treated as Hugging Face dataset shuffling only when the file imports `datasets`, the method is `.shuffle`, and the call arguments match the library signature: only keywords among `seed`, `generator`, `keep_in_memory`, `load_from_cache_file`, `indices_cache_file_name`, `writer_batch_size`, `buffer_size`, and `num_proc` (or positional `seed`), with no explicit non-None seed or generator. Calls in files that do not import `datasets` are not flagged.
 
+## Dask DataFrame sampling and shuffling — R129 (review)
+
+```python
+import dask.dataframe as dd
+
+ddf.sample(frac=0.5)  # R129 review: partition sampling without random_state.
+ddf.sample(frac=0.5, random_state=42)  # No R129: explicit random_state.
+ddf.shuffle(on="col")  # R129 review: partition shuffling without tasks or random_state.
+ddf.shuffle(on="col", shuffle="tasks")  # No R129: deterministic tasks shuffle.
+ddf.shuffle(on="col", random_state=42)  # No R129: seeded shuffle.
+```
+
+R129 reviews Dask DataFrame `.sample()` and `.shuffle()` calls in files that import `dask`.
+Without an explicit `random_state`, `seed`, or `shuffle="tasks"`, partition division and
+sample extraction can diverge between scheduler runs across workers. Pass `random_state=integer`
+or configure `shuffle="tasks"` for repeatable execution.
+
 ## Dynamic arguments and limits
 
 New framework rules resolve literal `**{...}` expansions and inline `train`/`cv`

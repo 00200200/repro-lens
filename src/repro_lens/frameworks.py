@@ -24,6 +24,7 @@ RULES = {
     "R120": "PyTorch deterministic algorithms are enabled without CUBLAS_WORKSPACE_CONFIG.",
     "R124": "torch.cuda.manual_seed seeds only the current GPU without manual_seed_all.",
     "R127": "Hugging Face dataset shuffle() has no explicit seed; review random shuffling.",
+    "R129": "Dask DataFrame sample() or shuffle() has no explicit random_state or seed.",
     "R130": "PyTorch operation uses non-deterministic CUDA atomicAdd; review GPU reproducibility.",
 }
 
@@ -417,6 +418,89 @@ def report_hf_dataset_shuffle(calls, emit):
             "Pass seed=integer to ensure reproducible shuffling and enable Hugging Face's disk "
             "caching. The receiver is assumed to be a dataset object because this file imports "
             "datasets.",
+            "review",
+        )
+
+
+DASK_SAMPLE_KEYWORDS = {"frac", "replace", "random_state", "ignore_index", "seed"}
+
+
+def dask_sample(node, name):
+    """Return True for a Dask DataFrame .sample() call that leaves random_state unset."""
+    func = node.func
+    if name is not None or not isinstance(func, ast.Attribute) or func.attr != "sample":
+        return False
+    if node.args:
+        return False
+    keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+    if None in keywords or not set(keywords) <= DASK_SAMPLE_KEYWORDS:
+        return False
+    if "random_state" in keywords and constant(keywords["random_state"]) is not None:
+        return False
+    if "seed" in keywords and constant(keywords["seed"]) is not None:
+        return False
+    return bool(keywords)
+
+
+def report_dask_sample(calls, emit):
+    """Emit one review item per Dask DataFrame .sample() call without an explicit seed."""
+    for node in calls:
+        emit(
+            node,
+            "R129",
+            "sample() without an explicit random_state or seed draws non-deterministic "
+            "partition samples in Dask.",
+            "Pass random_state=integer or seed=integer to ensure reproducible partition "
+            "sampling in Dask DataFrames. The receiver is assumed to be a Dask object "
+            "because this file imports dask.",
+            "review",
+        )
+
+
+DASK_SHUFFLE_KEYWORDS = {
+    "on",
+    "ignore_index",
+    "npartitions",
+    "max_branch",
+    "shuffle",
+    "compute",
+    "random_state",
+    "seed",
+}
+
+
+def dask_shuffle(node, name):
+    """Return True for a Dask DataFrame .shuffle() call lacking deterministic configuration."""
+    func = node.func
+    if name is not None or not isinstance(func, ast.Attribute) or func.attr != "shuffle":
+        return False
+    if any(isinstance(arg, ast.Starred) for arg in node.args):
+        return False
+    if len(node.args) > 3:
+        return False
+    keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+    if None in keywords or not set(keywords) <= DASK_SHUFFLE_KEYWORDS:
+        return False
+    if "random_state" in keywords and constant(keywords["random_state"]) is not None:
+        return False
+    if "seed" in keywords and constant(keywords["seed"]) is not None:
+        return False
+    if "shuffle" in keywords and constant(keywords["shuffle"]) == "tasks":
+        return False
+    return True
+
+
+def report_dask_shuffle(calls, emit):
+    """Emit review items per Dask DataFrame .shuffle() call lacking determinism."""
+    for node in calls:
+        emit(
+            node,
+            "R129",
+            "shuffle() without explicit random_state, seed, or shuffle='tasks' causes "
+            "non-deterministic partition ordering in Dask.",
+            "Specify shuffle='tasks' or pass random_state=integer to ensure deterministic "
+            "partition division across scheduler runs. The receiver is assumed to be a "
+            "Dask object because this file imports dask.",
             "review",
         )
 

@@ -24,6 +24,7 @@
 | R120 | review | PyTorch deterministic algorithms enabled without CUBLAS_WORKSPACE_CONFIG |
 | R124 | review | `torch.cuda.manual_seed` used without `torch.cuda.manual_seed_all` |
 | R127 | review | Hugging Face dataset `shuffle()` has no explicit seed |
+| R129 | review | Dask DataFrame `sample()` or `shuffle()` lacks explicit random_state or seed |
 | R130 | review | PyTorch operation uses non-deterministic CUDA atomicAdd accumulation |
 | R131 | review | Notebook cells were executed out of order; rerun from top to bottom before committing |
 | R190 | review | Dynamic arguments or framework configuration prevent a decision |

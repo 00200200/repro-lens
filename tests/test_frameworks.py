@@ -696,6 +696,50 @@ def test_hf_dataset_shuffle_findings_are_review_items_with_locations():
     assert [(f.code, f.line) for f in suppressed] == [("R127", 4)]
 
 
+DASK = "import dask.dataframe as dd\n"
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        (DASK + "df = ddf.sample(frac=0.5)", ["R129"]),
+        (DASK + "ddf.sample(frac=0.5)", ["R129"]),
+        (DASK + "ddf.sample(frac=0.5, random_state=None)", ["R129"]),
+        (DASK + "ddf.sample(frac=0.5, seed=None)", ["R129"]),
+        (DASK + "ddf.sample(frac=0.5, replace=True)", ["R129"]),
+        (DASK + "ddf.sample(frac=0.5, random_state=42)", []),
+        (DASK + "ddf.sample(frac=0.5, seed=42)", []),
+        (DASK + "ddf.sample(100)", []),
+        (DASK + "ddf.sample(**options)", []),
+        (DASK + "ddf.shuffle(on='col')", ["R129"]),
+        (DASK + "ddf.shuffle('col')", ["R129"]),
+        (DASK + "ddf.shuffle(on='col', npartitions=4)", ["R129"]),
+        (DASK + "ddf.shuffle(on='col', random_state=None)", ["R129"]),
+        (DASK + "ddf.shuffle(on='col', seed=None)", ["R129"]),
+        (DASK + "ddf.shuffle(on='col', shuffle='disk')", ["R129"]),
+        (DASK + "ddf.shuffle(on='col', shuffle='tasks')", []),
+        (DASK + "ddf.shuffle(on='col', random_state=42)", []),
+        (DASK + "ddf.shuffle(on='col', seed=42)", []),
+        (DASK + "ddf.shuffle(**options)", []),
+        ("ddf.sample(frac=0.5)", []),
+        ("ddf.shuffle(on='col')", []),
+    ],
+)
+def test_dask_sample_and_shuffle_without_seed_is_reviewed(source, expected):
+    assert [item[0] for item in findings(source)] == expected
+
+
+def test_dask_findings_are_review_items_with_locations():
+    active, suppressed = analyze(
+        "import dask.dataframe as dd\n\n"
+        "sampled = ddf.sample(frac=0.5)\n"
+        "shuffled = ddf.shuffle(on='col')  # repro-lens: ignore[R129] -- Shuffled elsewhere.\n",
+        "dask_job.py",
+    )
+    assert [(f.code, f.severity, f.line, f.column) for f in active] == [("R129", "review", 3, 11)]
+    assert [(f.code, f.line) for f in suppressed] == [("R129", 4)]
+
+
 def test_pandas_sample_findings_are_review_items_with_locations():
     active, suppressed = analyze(
         "import pandas as pd\n\ntrain = frame.sample(frac=0.8)\n"
