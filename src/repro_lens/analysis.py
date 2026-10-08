@@ -1039,6 +1039,7 @@ def analyze(
     frameworks.report_cuda_manual_seed(
         scanner.cuda_manual_seed, scanner.cuda_manual_seed_all, scanner.emit
     )
+    frameworks.check_ray_distributed_seeding(tree, scanner.emit, scanner.qualified)
     suppressions = {}
     invalid = []
     known_codes = {

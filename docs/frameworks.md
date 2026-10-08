@@ -345,6 +345,49 @@ Without an explicit `random_state`, `seed`, or `shuffle="tasks"`, partition divi
 sample extraction can diverge between scheduler runs across workers. Pass `random_state=integer`
 or configure `shuffle="tasks"` for repeatable execution.
 
+## Ray Train & Ray Tune distributed worker seeding — R123 (review)
+
+```python
+import ray
+import torch
+from ray.train.torch import TorchTrainer
+
+
+# R123 review: fixed constant seed in Ray worker function.
+@ray.remote
+def worker():
+    torch.manual_seed(42)
+
+
+# Recommended: combine base seed with worker rank.
+@ray.remote
+def worker():
+    torch.manual_seed(42 + ray.train.get_context().get_world_rank())
+
+
+# R123 review: fixed constant seed across distributed worker processes.
+def train_loop():
+    torch.manual_seed(42)
+
+
+trainer = TorchTrainer(train_loop_per_worker=train_loop)
+
+
+# Recommended: incorporate rank or worker ID.
+def train_loop():
+    torch.manual_seed(42 + ray.train.get_context().get_world_rank())
+
+
+trainer = TorchTrainer(train_loop_per_worker=train_loop)
+```
+
+Ray executes training functions and remote actors across distributed workers in separate
+processes. When a training function or remote actor seeds an RNG with a hardcoded constant
+(e.g., `torch.manual_seed(42)`, `np.random.seed(42)`, or `random.seed(42)`), all worker processes
+across the cluster initialize identical random states and generate identical data batches,
+corrupting parallel data loading. Combine the base seed with the worker rank or ID (such as
+`ray.train.get_context().get_world_rank()` or `worker_id`) to ensure distinct random streams.
+
 ## Dynamic arguments and limits
 
 New framework rules resolve literal `**{...}` expansions and inline `train`/`cv`

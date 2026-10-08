@@ -22,6 +22,7 @@ RULES = {
     "R117": "Hugging Face TrainingArguments omits full_determinism=True or data_seed.",
     "R118": "Polars sample() has no explicit seed; review random subsampling.",
     "R120": "PyTorch deterministic algorithms are enabled without CUBLAS_WORKSPACE_CONFIG.",
+    "R123": "Ray distributed worker or train loop uses fixed seed without worker rank or ID.",
     "R124": "torch.cuda.manual_seed seeds only the current GPU without manual_seed_all.",
     "R125": "Non-deterministic LLM generation parameters in vLLM or Hugging Face.",
     "R127": "Hugging Face dataset shuffle() has no explicit seed; review random shuffling.",
@@ -1081,3 +1082,273 @@ def check_assignment(node, name, value, emit):
             "Review benchmark=False for repeatability, or justify this performance choice. "
             "Deterministic kernels and RNG state require separate control.",
         )
+
+
+RAY_TRAINER_NAMES = {
+    "TorchTrainer",
+    "DataParallelTrainer",
+    "TensorflowTrainer",
+    "HorovodTrainer",
+    "TransformersTrainer",
+    "XGBoostTrainer",
+    "LightGBMTrainer",
+    "LightningTrainer",
+    "AccelerateTrainer",
+    "Trainer",
+    "Tuner",
+}
+
+
+def is_ray_remote_decorator(dec, qualified=None) -> bool:
+    """True for @ray.remote or @remote (with or without arguments)."""
+    target = dec.func if isinstance(dec, ast.Call) else dec
+    if isinstance(target, ast.Attribute):
+        if target.attr == "remote":
+            if isinstance(target.value, ast.Name) and target.value.id in {"ray", "r"}:
+                return True
+            if qualified:
+                q = qualified(target.value)
+                if q in {"ray", "ray.remote"} or qualified(target) == "ray.remote":
+                    return True
+    elif isinstance(target, ast.Name):
+        if target.id == "remote":
+            return True
+        if qualified and qualified(target) == "ray.remote":
+            return True
+    return False
+
+
+def is_ray_trainer_or_tune_call(func_node, qualified=None) -> bool:
+    """True for Ray Train / Tune constructors and runners like TorchTrainer, Tuner, tune.run."""
+    if isinstance(func_node, ast.Name):
+        if func_node.id in RAY_TRAINER_NAMES or func_node.id.endswith("Trainer"):
+            return True
+        if qualified:
+            q = qualified(func_node)
+            if q and any(q.endswith(t) for t in RAY_TRAINER_NAMES):
+                return True
+    elif isinstance(func_node, ast.Attribute):
+        if func_node.attr in RAY_TRAINER_NAMES or func_node.attr.endswith("Trainer"):
+            return True
+        if (
+            func_node.attr == "run"
+            and isinstance(func_node.value, ast.Name)
+            and func_node.value.id in {"tune", "ray"}
+        ):
+            return True
+        if qualified:
+            q = qualified(func_node)
+            if q and (
+                any(q.endswith(t) for t in RAY_TRAINER_NAMES) or q in {"ray.tune.run", "tune.run"}
+            ):
+                return True
+    return False
+
+
+def is_seed_call(node: ast.Call, qualified=None) -> tuple[bool, str]:
+    """True for torch.manual_seed, np.random.seed, random.seed, etc."""
+    name = qualified(node.func) if qualified else None
+    if name in {
+        "torch.manual_seed",
+        "torch.random.manual_seed",
+        "torch.cuda.manual_seed",
+        "torch.cuda.manual_seed_all",
+    }:
+        return True, name
+    if name in {"numpy.random.seed", "np.random.seed"}:
+        return True, name
+    if name == "random.seed":
+        return True, name
+
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        if func.attr in {"manual_seed", "manual_seed_all"}:
+            return True, f"torch.{func.attr}"
+        if func.attr == "seed":
+            if isinstance(func.value, ast.Name):
+                if func.value.id in {"random"}:
+                    return True, "random.seed"
+                if func.value.id in {"np", "numpy"}:
+                    return True, "np.random.seed"
+            elif isinstance(func.value, ast.Attribute) and func.value.attr == "random":
+                return True, "np.random.seed"
+    elif isinstance(func, ast.Name) and func.id == "manual_seed":
+        return True, "torch.manual_seed"
+    return False, ""
+
+
+def extract_seed_arg(node: ast.Call) -> ast.AST | None:
+    """Extract positional or keyword seed argument from a seed call."""
+    if node.args:
+        return node.args[0]
+    for kw in node.keywords:
+        if kw.arg in {"seed", "a"}:
+            return kw.value
+    return None
+
+
+def incorporates_rank(node: ast.AST | None, rank_vars: set[str] | None = None) -> bool:
+    """True if node AST incorporates worker rank, local rank, or worker ID."""
+    if node is None:
+        return False
+    rank_vars = rank_vars or set()
+    for child in ast.walk(node):
+        if isinstance(child, ast.Name):
+            if child.id in rank_vars:
+                return True
+            lowered = child.id.lower()
+            if "rank" in lowered or "worker" in lowered:
+                return True
+        elif isinstance(child, ast.Attribute):
+            lowered = child.attr.lower()
+            if "rank" in lowered or "worker" in lowered:
+                return True
+        elif isinstance(child, ast.Call):
+            if isinstance(child.func, ast.Name) and (
+                "rank" in child.func.id.lower() or "worker" in child.func.id.lower()
+            ):
+                return True
+            if isinstance(child.func, ast.Attribute) and (
+                "rank" in child.func.attr.lower() or "worker" in child.func.attr.lower()
+            ):
+                return True
+        elif isinstance(child, ast.Subscript):
+            if isinstance(child.slice, ast.Constant) and isinstance(child.slice.value, str):
+                lowered = child.slice.value.lower()
+                if "rank" in lowered or "worker" in lowered:
+                    return True
+    return False
+
+
+def check_ray_distributed_seeding(tree: ast.AST, emit, qualified=None):
+    """Review fixed constant seeds in Ray distributed worker actors and train loops (R123)."""
+    ray_func_names: set[str] = set()
+    ray_target_nodes: list[ast.AST] = []
+
+    named_definitions: dict[str, list[ast.AST]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            named_definitions.setdefault(node.name, []).append(node)
+            if any(is_ray_remote_decorator(dec, qualified) for dec in node.decorator_list):
+                ray_target_nodes.append(node)
+
+        elif isinstance(node, ast.Call):
+            if (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "remote"
+                and (
+                    (isinstance(node.func.value, ast.Name) and node.func.value.id in {"ray", "r"})
+                    or (qualified and qualified(node.func) == "ray.remote")
+                )
+            ) or (isinstance(node.func, ast.Name) and node.func.id == "remote"):
+                if node.args and isinstance(node.args[0], ast.Name):
+                    ray_func_names.add(node.args[0].id)
+                elif node.args and isinstance(node.args[0], (ast.Lambda, ast.FunctionDef)):
+                    ray_target_nodes.append(node.args[0])
+
+            is_ray_call = is_ray_trainer_or_tune_call(node.func, qualified)
+            for kw in node.keywords:
+                if kw.arg in {"train_loop_per_worker", "train_loop"} or (
+                    is_ray_call and kw.arg in {"trainable", "run_or_experiment"}
+                ):
+                    if isinstance(kw.value, ast.Name):
+                        ray_func_names.add(kw.value.id)
+                    elif isinstance(kw.value, (ast.Lambda, ast.FunctionDef)):
+                        ray_target_nodes.append(kw.value)
+
+            if is_ray_call and node.args:
+                arg0 = node.args[0]
+                if isinstance(arg0, ast.Name):
+                    ray_func_names.add(arg0.id)
+                elif isinstance(arg0, (ast.Lambda, ast.FunctionDef)):
+                    ray_target_nodes.append(arg0)
+
+    for name in ray_func_names:
+        for def_node in named_definitions.get(name, []):
+            if def_node not in ray_target_nodes:
+                ray_target_nodes.append(def_node)
+
+    if not ray_target_nodes:
+        return
+
+    module_constants = {}
+    if isinstance(tree, ast.Module):
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+                target = stmt.targets[0]
+                if isinstance(target, ast.Name):
+                    val = constant(stmt.value)
+                    if isinstance(val, int) and not isinstance(val, bool):
+                        module_constants[target.id] = val
+
+    flagged_calls = set()
+
+    for target_node in ray_target_nodes:
+        rank_vars = set()
+        local_constants = dict(module_constants)
+
+        if isinstance(target_node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            for arg in (
+                target_node.args.posonlyargs + target_node.args.args + target_node.args.kwonlyargs
+            ):
+                if "rank" in arg.arg.lower() or "worker" in arg.arg.lower():
+                    rank_vars.add(arg.arg)
+
+        for stmt in ast.walk(target_node):
+            if isinstance(stmt, ast.Assign):
+                if incorporates_rank(stmt.value, rank_vars):
+                    for t in stmt.targets:
+                        for n in ast.walk(t):
+                            if isinstance(n, ast.Name):
+                                rank_vars.add(n.id)
+                else:
+                    for t in stmt.targets:
+                        if isinstance(t, ast.Name):
+                            val = constant(stmt.value)
+                            if isinstance(val, int) and not isinstance(val, bool):
+                                local_constants[t.id] = val
+            elif isinstance(stmt, ast.AnnAssign) and stmt.value:
+                if incorporates_rank(stmt.value, rank_vars):
+                    if isinstance(stmt.target, ast.Name):
+                        rank_vars.add(stmt.target.id)
+                else:
+                    if isinstance(stmt.target, ast.Name):
+                        val = constant(stmt.value)
+                        if isinstance(val, int) and not isinstance(val, bool):
+                            local_constants[stmt.target.id] = val
+
+        for subnode in ast.walk(target_node):
+            if not isinstance(subnode, ast.Call):
+                continue
+            is_seed, name = is_seed_call(subnode, qualified)
+            if not is_seed:
+                continue
+            if subnode in flagged_calls:
+                continue
+
+            seed_arg = extract_seed_arg(subnode)
+            if seed_arg is None:
+                continue
+
+            if incorporates_rank(seed_arg, rank_vars):
+                continue
+
+            is_fixed_seed = False
+            seed_val = constant(seed_arg)
+            if isinstance(seed_val, int) and not isinstance(seed_val, bool):
+                is_fixed_seed = True
+            elif isinstance(seed_arg, ast.Name) and seed_arg.id in local_constants:
+                is_fixed_seed = True
+
+            if is_fixed_seed:
+                flagged_calls.add(subnode)
+                emit(
+                    subnode,
+                    "R123",
+                    f"{name} called with fixed constant seed in Ray distributed worker without "
+                    "incorporating rank or worker ID.",
+                    "Combine the base seed with ray.train.get_context().get_world_rank() "
+                    "or worker_id so distributed worker processes do not draw identical "
+                    "random streams.",
+                    "review",
+                )
