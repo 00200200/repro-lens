@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import fnmatch
 import importlib.metadata
 import json
@@ -320,8 +321,23 @@ def analyze_notebook(
     ] + order_ignored
 
 
-def check(root: Path, selected: list[str] | None = None) -> dict:
+def _scan_path(args):
+    path, relative, custom_rules = args
+    try:
+        if path.suffix == ".ipynb":
+            return analyze_notebook(path, relative, custom_rules=custom_rules)
+        with tokenize.open(path) as handle:
+            return analyze(handle.read(), relative, custom_rules=custom_rules)
+    except (OSError, UnicodeError, SyntaxError, ValueError) as exc:
+        return [
+            Finding(relative, 1, 1, "S902", "error", str(exc), "Restore readable Python source.")
+        ], []
+
+
+def check(root: Path, selected: list[str] | None = None, jobs: int = 1) -> dict:
     root = root.resolve()
+    if jobs < 1:
+        raise ValueError("jobs must be a positive integer")
     findings, suppressed = [], []
     try:
         policy = read_policy(root)
@@ -410,23 +426,17 @@ def check(root: Path, selected: list[str] | None = None) -> dict:
                     )
                 )
     custom_rules = load_custom_rules(root)
-    count = 0
-    for path, relative in paths_to_scan(root, selected or [], policy.get("exclude", [])):
-        count += 1
-        try:
-            if path.suffix == ".ipynb":
-                active, ignored = analyze_notebook(path, relative, custom_rules=custom_rules)
-            else:
-                with tokenize.open(path) as handle:
-                    active, ignored = analyze(handle.read(), relative, custom_rules=custom_rules)
-            findings.extend(active)
-            suppressed.extend(ignored)
-        except (OSError, UnicodeError, SyntaxError, ValueError) as exc:
-            findings.append(
-                Finding(
-                    relative, 1, 1, "S902", "error", str(exc), "Restore readable Python source."
-                )
-            )
+    paths = list(paths_to_scan(root, selected or [], policy.get("exclude", [])))
+    count = len(paths)
+    tasks = [(path, relative, tuple(custom_rules)) for path, relative in paths]
+    if jobs > 1 and count > 20:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=jobs) as executor:
+            results = executor.map(_scan_path, tasks)
+    else:
+        results = map(_scan_path, tasks)
+    for active, ignored in results:
+        findings.extend(active)
+        suppressed.extend(ignored)
     findings.sort(key=lambda f: (f.path, f.cell or 0, f.line, f.code))
     return {
         "schema_version": 1,

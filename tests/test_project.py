@@ -1,8 +1,29 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from repro_lens.cli import ansi_enabled, main, resolve_check_format
 from repro_lens.project import check, render
+
+
+def test_parallel_scan_matches_serial_findings_and_order(tmp_path):
+    for index in range(25):
+        (tmp_path / f"file_{index:02d}.py").write_text(
+            "from sklearn.model_selection import train_test_split\n"
+            "train_test_split(data, labels)\n",
+            encoding="utf-8",
+        )
+    serial = check(tmp_path, jobs=1)
+    parallel = check(tmp_path, jobs=2)
+    assert parallel["files_checked"] == serial["files_checked"] == 25
+    assert parallel["findings"] == serial["findings"]
+    assert parallel["suppressed"] == serial["suppressed"]
+
+
+def test_parallel_scan_rejects_non_positive_jobs(tmp_path):
+    with pytest.raises(ValueError, match="positive"):
+        check(tmp_path, jobs=0)
 
 
 def test_scan_never_executes_target_code(tmp_path):

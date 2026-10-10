@@ -86,6 +86,13 @@ def main(argv=None):
     )
     scan.add_argument("--root", type=Path, default=Path.cwd())
     scan.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=1,
+        help="Worker processes for projects with more than 20 files (default: 1)",
+    )
+    scan.add_argument(
         "--format",
         choices=["text", "pretty", "json", "markdown", "sarif", "github"],
         help="Output style. Default: pretty on a terminal, text when piped or saved",
@@ -173,7 +180,9 @@ def main(argv=None):
             exit_codes = {"matched": 0, "mismatch": 1, "stable": 0, "unstable": 1, "error": 2}
             return exit_codes.get(report["status"], 2)
         report = (
-            add_ignores(args.root, args.files) if args.add_ignores else check(args.root, args.files)
+            add_ignores(args.root, args.files)
+            if args.add_ignores
+            else check(args.root, args.files, jobs=args.jobs)
         )
         writing_file = args.output is not None
         is_tty = sys.stdout.isatty()
