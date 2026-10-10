@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import __version__
 from .analysis import RULES
+from .capsule import create_capsule, inspect_capsule, verify_capsule
 from .comparison import agent_review, compare_reports, render_agent_review, render_comparison
 from .project import add_ignores, check, render, write_step_summary
 from .sarif import render_sarif, to_github
@@ -135,6 +136,18 @@ def main(argv=None):
     review.add_argument("--baseline", required=True, type=Path)
     review.add_argument("--after", required=True, type=Path)
     review.add_argument("--format", choices=["text", "json"], default="json")
+    capsule = sub.add_parser("capsule", help="Create or inspect a portable evidence capsule")
+    capsule_sub = capsule.add_subparsers(dest="capsule_command", required=True)
+    create_capsule_parser = capsule_sub.add_parser("create", help="Create a local evidence capsule")
+    create_capsule_parser.add_argument("report", type=Path)
+    create_capsule_parser.add_argument("output", type=Path)
+    inspect_parser = capsule_sub.add_parser("inspect", help="Inspect capsule metadata")
+    inspect_parser.add_argument("capsule", type=Path)
+    verify_parser = capsule_sub.add_parser("verify", help="Check declared inputs against a capsule")
+    verify_parser.add_argument("capsule", type=Path)
+    verify_parser.add_argument("--root", type=Path, default=Path.cwd())
+    for parser_ in (create_capsule_parser, inspect_parser, verify_parser):
+        parser_.add_argument("--format", choices=["text", "json"], default="json")
     create = sub.add_parser(
         "init", help="Create a runnable scikit-learn project in a new directory"
     )
@@ -159,6 +172,21 @@ def main(argv=None):
             review = agent_review(args.baseline, args.after)
             print(render_agent_review(review, args.format), end="")
             return {"APPROVED": 0, "REJECTED": 1, "NEEDS_HUMAN_REVIEW": 2}[review["verdict"]]
+        if args.command == "capsule":
+            if args.capsule_command == "create":
+                result = {
+                    "status": "created",
+                    "capsule": str(create_capsule(args.report, args.output).resolve()),
+                }
+            elif args.capsule_command == "inspect":
+                result = inspect_capsule(args.capsule)
+            else:
+                result = verify_capsule(args.capsule, args.root)
+            if args.format == "json":
+                print(json.dumps(result, indent=2, ensure_ascii=False) + "\n", end="")
+            else:
+                print(f"Repro Lens capsule: {result.get('status', 'inspected')}\n")
+            return 0 if result.get("status") in {"created", "verified", None} else 1
         if not args.root.is_dir():
             raise ValueError(f"Project directory does not exist: {args.root}")
         if args.command == "verify":
