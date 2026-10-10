@@ -43,6 +43,7 @@ Machine Learning code is notorious for silent reproducibility failures. Repro Le
 | **`repro-lens verify`** | Do two runs produce matching declared outputs? | Metrics, artifact hashes, logs |
 | **`repro-lens compare`** | Did the edit preserve the baseline outputs? | Output differences (ideal for refactors) |
 | **`repro-lens agent-review`** | What should an agent do with the before/after evidence? | Machine-readable verdict and risk assessment |
+| **`repro-lens lsp`** | Can I see reproducibility findings while editing? | Standard LSP diagnostics for Python documents |
 
 ## 📦 Quickstart
 
