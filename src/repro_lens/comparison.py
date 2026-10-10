@@ -168,6 +168,43 @@ def compare_reports(before_path: Path, after_path: Path) -> dict:
     return report
 
 
+def agent_review(before_path: Path, after_path: Path) -> dict:
+    """Return a machine-readable verdict for an agent-driven before/after change."""
+    before, _ = read_report(before_path)
+    after, _ = read_report(after_path)
+    report = compare_reports(before_path, after_path)
+    before_metrics = before["runs"][0]["metrics"]
+    after_metrics = after["runs"][0]["metrics"]
+    delta_metrics = {
+        name: after_metrics[name] - before_metrics[name]
+        for name in sorted(before_metrics.keys() & after_metrics.keys())
+        if type(before_metrics[name]) in (int, float) and type(after_metrics[name]) in (int, float)
+    }
+    risks = []
+    if report["status"] == "mismatch":
+        risks.append("Declared outputs changed between the baseline and the agent result.")
+    if report["status"] == "not_comparable":
+        risks.append("The verification contract or recorded environment changed.")
+    if report.get("input_immutability") == "changed":
+        risks.append("Declared input files changed and require human review.")
+    verdict = {
+        "matched": "APPROVED",
+        "mismatch": "REJECTED",
+        "not_comparable": "NEEDS_HUMAN_REVIEW",
+    }[report["status"]]
+    if report["status"] == "matched" and report.get("input_immutability") == "changed":
+        verdict = "NEEDS_HUMAN_REVIEW"
+    return {
+        "schema_version": 1,
+        "kind": "agent_review",
+        "verdict": verdict,
+        "delta_metrics": delta_metrics,
+        "risk_assessment": risks,
+        "comparison": report,
+        **report,
+    }
+
+
 def render_comparison(report: dict, format_: str) -> str:
     if format_ == "json":
         return json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
@@ -181,4 +218,13 @@ def render_comparison(report: dict, format_: str) -> str:
     if report.get("input_immutability") == "changed":
         lines.append("Input immutability: changed since the previous report snapshot")
     lines.extend(report["differences"])
+    return "\n".join(lines) + "\n"
+
+
+def render_agent_review(review: dict, format_: str) -> str:
+    if format_ == "json":
+        return json.dumps(review, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    lines = [f"Repro Lens agent review: {review['verdict']}"]
+    lines.extend(f"Metric delta {name}: {value}" for name, value in review["delta_metrics"].items())
+    lines.extend(f"Risk: {risk}" for risk in review["risk_assessment"])
     return "\n".join(lines) + "\n"
