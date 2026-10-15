@@ -108,7 +108,7 @@ def action_steps():
 
 def test_action_inputs_match_the_cli():
     action = yaml.safe_load((ROOT / "action.yml").read_text())
-    assert set(action["inputs"]) == {"root", "fail-on", "sarif-file"}
+    assert set(action["inputs"]) == {"root", "fail-on", "sarif-file", "comment-on-pr"}
     assert action["inputs"]["fail-on"]["default"] == "warning"
     setup = [step for step in action_steps() if "uses" in step]
     assert len(setup) == 1 and setup[0]["if"] == "steps.python.outputs.command == ''"
