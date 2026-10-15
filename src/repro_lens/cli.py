@@ -13,6 +13,7 @@ from . import __version__
 from .analysis import RULES
 from .capsule import create_capsule, inspect_capsule, verify_capsule
 from .comparison import agent_review, compare_reports, render_agent_review, render_comparison
+from .lsp import run as run_lsp
 from .project import add_ignores, check, render, write_step_summary
 from .sarif import render_sarif, to_github
 from .verify import verify
@@ -161,10 +162,15 @@ def main(argv=None):
     create.add_argument("destination", type=Path)
     create.add_argument("--name", default="ml_project")
     sub.add_parser("rules", help="List supported rules")
+    lsp = sub.add_parser("lsp", help="Run the stdlib-only editor diagnostics server")
+    lsp.add_argument("--root", type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
     try:
         if args.command == "rules":
             print("\n".join(f"{code} {description}" for code, description in RULES.items()))
+            return 0
+        if args.command == "lsp":
+            run_lsp(args.root.resolve())
             return 0
         if args.command == "init":
             destination = initialize(args.destination.resolve(), args.name)
