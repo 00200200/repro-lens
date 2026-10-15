@@ -16,6 +16,9 @@ inputs:
   sarif-file:
     description: Also write a SARIF 2.1.0 report to this path, for upload to code scanning.
     default: ''
+  comment-on-pr:
+    description: Post or update a sticky reproducibility summary comment on pull requests.
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -38,6 +41,11 @@ runs:
         ROOT: ${{ inputs.root }}
         FAIL_ON: ${{ inputs.fail-on }}
         SARIF_FILE: ${{ inputs.sarif-file }}
+        COMMENT_ON_PR: ${{ inputs.comment-on-pr }}
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_EVENT_PATH: ${{ github.event_path }}
+        REPRO_LENS_REPORT: ${{ runner.temp }}/repro-lens-report.json
         PYTHONPATH: ${{ github.action_path }}/src
         # GITHUB_STEP_SUMMARY is provided by Actions; the CLI appends a markdown table
         # with collapsible finding/diff sections when that path is set.
@@ -47,7 +55,19 @@ runs:
         else
           run=(uv run --no-project --python 3.13 python)
         fi
+        status=0
         if [ -n "$SARIF_FILE" ]; then
           "${run[@]}" -m repro_lens check --root "$ROOT" --format sarif --output "$SARIF_FILE" --fail-on "$FAIL_ON" || [ $? -eq 1 ]
         fi
-        "${run[@]}" -m repro_lens check --root "$ROOT" --format github --fail-on "$FAIL_ON"
+        if [ "$COMMENT_ON_PR" = "true" ]; then
+          "${run[@]}" -m repro_lens check --root "$ROOT" --format json --output "$REPRO_LENS_REPORT" --fail-on "$FAIL_ON" || status=$?
+        fi
+        github_status=0
+        "${run[@]}" -m repro_lens check --root "$ROOT" --format github --fail-on "$FAIL_ON" || github_status=$?
+        if [ "$COMMENT_ON_PR" = "true" ] && [ -n "$GITHUB_TOKEN" ]; then
+          "${run[@]}" "$GITHUB_ACTION_PATH/scripts/post_pr_comment.py"
+        fi
+        if [ "$github_status" -gt "$status" ]; then
+          status="$github_status"
+        fi
+        exit "$status"
