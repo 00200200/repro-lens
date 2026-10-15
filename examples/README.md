@@ -12,6 +12,7 @@ CLI and coding-agent skill; each links to its command, expected output and limit
 | See which framework settings need attention | [Framework screening](framework_checks/) | Static analysis; no framework imports or training | Risky, unresolved and explicitly configured examples show different findings |
 | Try the tool on my existing project | [Advisory rollout](../docs/trying-an-existing-project.md) | Static analysis of my source | Findings to review before enabling a blocking hook |
 | Review a coding agent's edit to my experiment | [Agent workflow](../docs/agent-review.md) | My reviewed experiment command, before and after the edit | Reports show output changes and verification-contract changes |
+| Understand distributed training seed boundaries | [DeepSpeed/Megatron-LM guide](deepspeed_megatron_review/) | Configuration and verification guidance; no GPU run is started | A checklist for 3D parallelism, RNG trackers and sampler epochs |
 
 ## Run the smallest demo
 
