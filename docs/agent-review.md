@@ -41,6 +41,29 @@ repro-lens compare /path/to/before/report.json /path/to/after/report.json
 repro-lens compare /path/to/before/report.json /path/to/after/report.json --format json
 ```
 
+For coding-agent integrations, `agent-review` wraps the same comparison in a
+machine-readable verdict. It does not execute the experiment or inspect the
+working tree:
+
+```bash
+repro-lens agent-review \
+  --baseline /path/to/before/report.json \
+  --after /path/to/after/report.json
+```
+
+The JSON result includes `delta_metrics`, a `risk_assessment` list, and the
+complete comparison evidence. The verdict and exit code are:
+
+| Verdict | Exit | Meaning |
+| --- | --- | --- |
+| `APPROVED` | 0 | Declared outputs and the verification contract are unchanged |
+| `REJECTED` | 1 | A declared metric or artifact changed |
+| `NEEDS_HUMAN_REVIEW` | 2 | The contract, environment or declared inputs changed |
+
+`APPROVED` is limited to the retained evidence and does not establish
+scientific validity. Input changes always require human review, even when the
+recorded outputs still match.
+
 Both reports must describe successful two-run matches. Comparison reads only those
 two JSON files; it does not rerun training or read the artifact paths they contain.
 

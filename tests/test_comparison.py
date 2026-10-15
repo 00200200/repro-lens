@@ -8,7 +8,12 @@ from pathlib import Path
 import pytest
 
 from repro_lens.cli import main
-from repro_lens.comparison import compare_reports, read_report, render_comparison
+from repro_lens.comparison import (
+    agent_review,
+    compare_reports,
+    read_report,
+    render_comparison,
+)
 from repro_lens.verify import verify
 
 
@@ -317,3 +322,46 @@ Path(sys.argv[1], 'result.json').write_text(json.dumps({'metrics': {'score': SCO
     comparison = compare_reports(Path(before["report_path"]), Path(after["report_path"]))
     assert comparison["status"] == "mismatch"
     assert comparison["input_changes"]["modified"] == ["train.py"]
+
+
+def test_agent_review_approves_unchanged_evidence(tmp_path):
+    report = recorded_report()
+    result = agent_review(
+        save(tmp_path / "before.json", report), save(tmp_path / "after.json", report)
+    )
+    assert result["verdict"] == "APPROVED"
+    assert result["delta_metrics"] == {"score": 0}
+    assert result["risk_assessment"] == []
+    assert result["status"] == "matched"
+
+
+def test_agent_review_rejects_changed_outputs_and_reports_metric_delta(tmp_path):
+    before, after = recorded_report(), recorded_report()
+    for run in after["runs"]:
+        run["metrics"]["score"] = 2
+    result = agent_review(
+        save(tmp_path / "before.json", before), save(tmp_path / "after.json", after)
+    )
+    assert result["verdict"] == "REJECTED"
+    assert result["delta_metrics"] == {"score": 1}
+    assert any("output" in risk.lower() for risk in result["risk_assessment"])
+    assert result["status"] == "mismatch"
+
+
+def test_agent_review_requires_human_review_for_contract_or_input_changes(tmp_path):
+    before, after = recorded_report(), recorded_report()
+    after["configuration"]["atol"] = 1
+    result = agent_review(
+        save(tmp_path / "before.json", before), save(tmp_path / "after.json", after)
+    )
+    assert result["verdict"] == "NEEDS_HUMAN_REVIEW"
+    assert any("contract" in risk.lower() for risk in result["risk_assessment"])
+
+    before, after = recorded_report(), recorded_report()
+    after["inputs_sha256"]["train.py"] = "d" * 64
+    result = agent_review(
+        save(tmp_path / "before-input.json", before),
+        save(tmp_path / "after-input.json", after),
+    )
+    assert result["verdict"] == "NEEDS_HUMAN_REVIEW"
+    assert any("input" in risk.lower() for risk in result["risk_assessment"])
