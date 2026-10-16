@@ -206,5 +206,18 @@
     "framework": "PyTorch",
     "question": "Make unsupported deterministic operations visible.",
     "explanation": "With warn_only=True, an unsupported operation can continue. Strict mode changes that behavior and may stop a run; it is a policy decision, not a universal fix."
+  },
+  {
+    "id": "huggingface-training-args",
+    "name": "Hugging Face TrainingArguments",
+    "framework": "Hugging Face",
+    "question": "Configure full determinism and DataLoader seeds for fine-tuning.",
+    "explanation": "TrainingArguments omits full_determinism=True or an explicit data_seed. Passing full_determinism=True and data_seed ensures PyTorch deterministic algorithms are enabled and dataset shuffling across epochs is reproducible.",
+    "before": "from transformers import TrainingArguments\nTrainingArguments(output_dir=\"./out\", seed=42)\n",
+    "after": "from transformers import TrainingArguments\nTrainingArguments(output_dir=\"./out\", seed=42, data_seed=42, full_determinism=True)\n",
+    "expected": [
+      "R117",
+      "review"
+    ]
   }
 ]
