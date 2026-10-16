@@ -689,3 +689,58 @@ def test_sandbox_execution_and_reporting(tmp_path, monkeypatch):
     assert "Sandbox: docker (python:3.11-slim)" in rendered
     summary = render_step_summary(res)
     assert "| Sandbox | `docker` (`python:3.11-slim`) |" in summary
+
+
+def test_verify_tolerance_config_aliases_and_override(tmp_path):
+    # Test pyproject.toml aliases: abs-tol / rel-tol
+    cfg = read_verify_config(
+        {
+            "verify": {
+                "command": ["python3", "test.py", "{output}"],
+                "inputs": ["test.py"],
+                "metrics": ["loss"],
+                "abs-tol": 0.05,
+                "rel-tol": 0.01,
+            }
+        }
+    )
+    assert cfg["atol"] == 0.05
+    assert cfg["rtol"] == 0.01
+
+    # Test abs_tol / rel_tol snake_case aliases
+    cfg_snake = read_verify_config(
+        {
+            "verify": {
+                "command": ["python3", "test.py", "{output}"],
+                "inputs": ["test.py"],
+                "metrics": ["loss"],
+                "abs_tol": 0.02,
+                "rel_tol": 0.005,
+            }
+        }
+    )
+    assert cfg_snake["atol"] == 0.02
+    assert cfg_snake["rtol"] == 0.005
+
+    # Test verify runtime override with atol
+    experiment(
+        tmp_path,
+        """
+    score = 1.0 if out.name == 'run-1' else 1.05
+    (out / 'result.json').write_text(json.dumps({'metrics': {'score': score}}))
+    """,
+    )
+    # Without override, default tolerance is 0 -> mismatch
+    res_mismatch = verify(tmp_path)
+    assert res_mismatch["status"] == "mismatch"
+
+    # With CLI atol override -> matched
+    res_matched = verify(tmp_path, atol=0.1)
+    assert res_matched["status"] == "matched"
+    assert res_matched["configuration"]["atol"] == 0.1
+
+    # Invalid tolerance raises ValueError
+    with pytest.raises(ValueError, match="verify.atol"):
+        verify(tmp_path, atol=-0.1)
+    with pytest.raises(ValueError, match="verify.rtol"):
+        verify(tmp_path, rtol=float("nan"))

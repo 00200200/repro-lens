@@ -132,18 +132,66 @@ def main(argv=None):
         default=None,
         help="Container image for sandbox execution (e.g. python:3.11-slim)",
     )
+    replay.add_argument(
+        "--atol",
+        "--abs-tol",
+        dest="atol",
+        type=float,
+        default=None,
+        help="Absolute tolerance for metric comparison",
+    )
+    replay.add_argument(
+        "--rtol",
+        "--rel-tol",
+        dest="rtol",
+        type=float,
+        default=None,
+        help="Relative tolerance for metric comparison",
+    )
     comparison = sub.add_parser(
         "compare", help="Compare two retained verification reports without executing code"
     )
     comparison.add_argument("before", type=Path)
     comparison.add_argument("after", type=Path)
     comparison.add_argument("--format", choices=["text", "json"], default="text")
+    comparison.add_argument(
+        "--atol",
+        "--abs-tol",
+        dest="atol",
+        type=float,
+        default=None,
+        help="Absolute tolerance for metric comparison",
+    )
+    comparison.add_argument(
+        "--rtol",
+        "--rel-tol",
+        dest="rtol",
+        type=float,
+        default=None,
+        help="Relative tolerance for metric comparison",
+    )
     review = sub.add_parser(
         "agent-review", help="Review an agent-driven change against retained evidence"
     )
     review.add_argument("--baseline", required=True, type=Path)
     review.add_argument("--after", required=True, type=Path)
     review.add_argument("--format", choices=["text", "json"], default="json")
+    review.add_argument(
+        "--atol",
+        "--abs-tol",
+        dest="atol",
+        type=float,
+        default=None,
+        help="Absolute tolerance for metric comparison",
+    )
+    review.add_argument(
+        "--rtol",
+        "--rel-tol",
+        dest="rtol",
+        type=float,
+        default=None,
+        help="Relative tolerance for metric comparison",
+    )
     capsule = sub.add_parser("capsule", help="Create or inspect a portable evidence capsule")
     capsule_sub = capsule.add_subparsers(dest="capsule_command", required=True)
     create_capsule_parser = capsule_sub.add_parser("create", help="Create a local evidence capsule")
@@ -177,12 +225,18 @@ def main(argv=None):
             print(f"Created {destination}\nNext: cd {destination} && uv sync && uv run pytest")
             return 0
         if args.command == "compare":
-            report = compare_reports(args.before, args.after)
+            report = compare_reports(args.before, args.after, atol=args.atol, rtol=args.rtol)
             print(render_comparison(report, args.format), end="")
             write_step_summary(report)
-            return {"matched": 0, "mismatch": 1, "not_comparable": 2}[report["status"]]
+            status_map = {
+                "matched": 0,
+                "matched (within tolerance)": 0,
+                "mismatch": 1,
+                "not_comparable": 2,
+            }
+            return status_map[report["status"]]
         if args.command == "agent-review":
-            review = agent_review(args.baseline, args.after)
+            review = agent_review(args.baseline, args.after, atol=args.atol, rtol=args.rtol)
             print(render_agent_review(review, args.format), end="")
             return {"APPROVED": 0, "REJECTED": 1, "NEEDS_HUMAN_REVIEW": 2}[review["verdict"]]
         if args.command == "capsule":
@@ -218,6 +272,8 @@ def main(argv=None):
                 seeds=seeds,
                 sandbox=args.sandbox,
                 sandbox_image=args.sandbox_image,
+                atol=args.atol,
+                rtol=args.rtol,
             )
             print(render(report, args.format), end="")
             write_step_summary(report)

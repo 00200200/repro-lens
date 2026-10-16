@@ -365,3 +365,77 @@ def test_agent_review_requires_human_review_for_contract_or_input_changes(tmp_pa
     )
     assert result["verdict"] == "NEEDS_HUMAN_REVIEW"
     assert any("input" in risk.lower() for risk in result["risk_assessment"])
+
+
+def test_compare_reports_with_atol_and_rtol_tolerance(tmp_path, capsys):
+    before = recorded_report()
+    after = recorded_report()
+    # Modify metric slightly: 1.0 -> 1.05
+    for run in after["runs"]:
+        run["metrics"]["score"] = 1.05
+
+    before_path = save(tmp_path / "before.json", before)
+    after_path = save(tmp_path / "after.json", after)
+
+    # Without tolerance override, default is atol=0 -> mismatch
+    comp_default = compare_reports(before_path, after_path)
+    assert comp_default["status"] == "mismatch"
+    assert "tolerance_status" not in comp_default
+
+    # With atol=0.1 override -> matched within tolerance
+    comp_tol = compare_reports(before_path, after_path, atol=0.1)
+    assert comp_tol["status"] == "matched"
+    assert comp_tol["tolerance_status"] == "matched (within tolerance)"
+    rendered = render_comparison(comp_tol, "text")
+    assert "Repro Lens: matched (within tolerance)" in rendered
+
+    # With rtol=0.1 override -> matched within tolerance
+    comp_rtol = compare_reports(before_path, after_path, rtol=0.1)
+    assert comp_rtol["status"] == "matched"
+    assert comp_rtol["tolerance_status"] == "matched (within tolerance)"
+
+    # With insufficient atol=0.01 -> mismatch
+    comp_fail = compare_reports(before_path, after_path, atol=0.01)
+    assert comp_fail["status"] == "mismatch"
+
+    # Agent review with tolerance approves
+    review = agent_review(before_path, after_path, atol=0.1)
+    assert review["verdict"] == "APPROVED"
+    assert review["delta_metrics"]["score"] == pytest.approx(0.05)
+
+    # Test CLI compare with --atol and --abs-tol
+    assert main(["compare", str(before_path), str(after_path), "--atol", "0.1"]) == 0
+    assert "Repro Lens: matched (within tolerance)" in capsys.readouterr().out
+
+    assert main(["compare", str(before_path), str(after_path), "--abs-tol", "0.1"]) == 0
+    assert "Repro Lens: matched (within tolerance)" in capsys.readouterr().out
+
+    # Test CLI compare with --rtol and --rel-tol
+    assert main(["compare", str(before_path), str(after_path), "--rtol", "0.1"]) == 0
+    assert "Repro Lens: matched (within tolerance)" in capsys.readouterr().out
+
+    assert main(["compare", str(before_path), str(after_path), "--rel-tol", "0.1"]) == 0
+    assert "Repro Lens: matched (within tolerance)" in capsys.readouterr().out
+
+    # Test CLI agent-review with --atol
+    assert (
+        main(
+            [
+                "agent-review",
+                "--baseline",
+                str(before_path),
+                "--after",
+                str(after_path),
+                "--atol",
+                "0.1",
+            ]
+        )
+        == 0
+    )
+    assert "APPROVED" in capsys.readouterr().out
+
+    # Invalid atol / rtol validation
+    with pytest.raises(ValueError, match="atol must be finite and nonnegative"):
+        compare_reports(before_path, after_path, atol=-1.0)
+    with pytest.raises(ValueError, match="rtol must be finite and nonnegative"):
+        compare_reports(before_path, after_path, rtol=float("inf"))
