@@ -27,8 +27,14 @@ from .project import (
 from .sarif import render_sarif, to_github
 from .verify import verify
 
+AVAILABLE_TEMPLATES = ("sklearn", "pytorch")
 
-def initialize(destination: Path, name: str):
+
+def initialize(destination: Path, name: str, template: str = "sklearn"):
+    if template not in AVAILABLE_TEMPLATES:
+        raise ValueError(
+            f"Unknown template: {template}. Supported templates: {', '.join(AVAILABLE_TEMPLATES)}"
+        )
     if (
         not re.fullmatch(r"[a-z][a-z0-9_]*", name)
         or keyword.iskeyword(name)
@@ -37,14 +43,14 @@ def initialize(destination: Path, name: str):
         raise ValueError("Use a lowercase Python package name, e.g. iris_experiment")
     if destination.exists():
         raise ValueError(f"Destination already exists; nothing was overwritten: {destination}")
-    packaged = Path(__file__).parent / "templates" / "sklearn"
-    template = (
-        packaged if packaged.is_dir() else Path(__file__).parents[2] / "templates" / "sklearn"
+    packaged = Path(__file__).parent / "templates" / template
+    template_dir = (
+        packaged if packaged.is_dir() else Path(__file__).parents[2] / "templates" / template
     )
-    if not template.is_dir():
-        raise ValueError("Template files are missing from this installation")
+    if not template_dir.is_dir():
+        raise ValueError(f"Template files for '{template}' are missing from this installation")
     shutil.copytree(
-        template,
+        template_dir,
         destination,
         ignore=shutil.ignore_patterns(
             ".venv", "__pycache__", ".repro-lens", ".pytest_cache", ".ruff_cache"
@@ -256,11 +262,15 @@ def main(argv=None):
     verify_parser.add_argument("--root", type=Path, default=Path.cwd())
     for parser_ in (create_capsule_parser, inspect_parser, verify_parser):
         parser_.add_argument("--format", choices=["text", "json"], default="json")
-    create = sub.add_parser(
-        "init", help="Create a runnable scikit-learn project in a new directory"
-    )
+    create = sub.add_parser("init", help="Create a runnable ML project template in a new directory")
     create.add_argument("destination", type=Path)
     create.add_argument("--name", default="ml_project")
+    create.add_argument(
+        "--template",
+        choices=["sklearn", "pytorch"],
+        default="sklearn",
+        help="Project template to create (choices: sklearn, pytorch; default: sklearn)",
+    )
     sub.add_parser("rules", help="List supported rules")
     lsp = sub.add_parser("lsp", help="Run the stdlib-only editor diagnostics server")
     lsp.add_argument("--root", type=Path, default=Path.cwd())
@@ -273,7 +283,7 @@ def main(argv=None):
             run_lsp(args.root.resolve())
             return 0
         if args.command == "init":
-            destination = initialize(args.destination.resolve(), args.name)
+            destination = initialize(args.destination.resolve(), args.name, args.template)
             print(f"Created {destination}\nNext: cd {destination} && uv sync && uv run pytest")
             return 0
         if args.command == "compare":

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from repro_lens.cli import ansi_enabled, main, resolve_check_format
+from repro_lens.cli import ansi_enabled, initialize, main, resolve_check_format
 from repro_lens.project import check, read_policy, render
 
 
@@ -101,6 +101,40 @@ def test_invalid_template_name_is_rejected_before_writing(tmp_path):
         destination = tmp_path / name.replace("/", "_")
         assert main(["init", str(destination), "--name", name]) == 2
         assert not destination.exists()
+
+
+def test_init_pytorch_template_generates_and_passes_check(tmp_path):
+    destination = tmp_path / "torch_project"
+    assert main(["init", str(destination), "--name", "torch_demo", "--template", "pytorch"]) == 0
+    assert destination.exists()
+    assert (destination / "src" / "torch_demo" / "train.py").exists()
+    assert (destination / "src" / "torch_demo" / "__init__.py").exists()
+    assert (destination / "pyproject.toml").exists()
+    assert (destination / "configs" / "baseline.toml").exists()
+    assert (destination / "data" / "raw" / "synthetic.csv").exists()
+
+    # Content replacements verified
+    pyproject_text = (destination / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'name = "torch_demo"' in pyproject_text
+    assert "src/torch_demo" in pyproject_text
+
+    # repro-lens check screening on the generated template produces 0 findings
+    report = check(destination)
+    assert report["files_checked"] >= 2
+    assert report["findings"] == []
+
+
+def test_init_invalid_template_type_rejected(tmp_path):
+    destination = tmp_path / "invalid_project"
+    with pytest.raises(SystemExit) as exc_info:
+        main(["init", str(destination), "--template", "unknown"])
+    assert exc_info.value.code == 2
+    assert not destination.exists()
+
+
+def test_initialize_unknown_template_raises(tmp_path):
+    with pytest.raises(ValueError, match="Unknown template"):
+        initialize(tmp_path / "dummy", "dummy_pkg", template="nonexistent")
 
 
 def test_skill_launcher_uses_same_engine(tmp_path):

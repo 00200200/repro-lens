@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.repro-lens/
+runs/
+data/processed/*
+!data/processed/.gitkeep
+.env
+.DS_Store

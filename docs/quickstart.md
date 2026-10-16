@@ -85,6 +85,12 @@ repro-lens check
 repro-lens verify
 ```
 
+Repro Lens supports both `sklearn` (default) and `pytorch` starter templates:
+```bash
+# PyTorch template with seed_everything, worker_init_fn, and verify contract:
+repro-lens init torch-demo --name torch_demo --template pytorch
+```
+
 This installs the example's ML dependencies and runs a baseline on a committed
 synthetic dataset. The configuration declares its seed, inputs and expected outputs.
 The runner executes training twice in separate processes and compares the declared
