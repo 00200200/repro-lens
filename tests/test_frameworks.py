@@ -1231,8 +1231,8 @@ def test_r122_suppression():
     code = (
         "import jax\n"
         "key = jax.random.PRNGKey(42)\n"
-        "w1 = jax.random.normal(key, shape=(10, 10))\n"
-        "w2 = jax.random.normal(key, shape=(10, 10))  # repro-lens: ignore[R122]\n"
+        "w1 = jax.random.normal(key, shape=(1, 1))\n"
+        "w2 = jax.random.normal(key, shape=(1, 1))  # repro-lens: ignore[R122] -- Shared.\n"
     )
     active, suppressed = analyze(code, "test.py")
     assert active == []
