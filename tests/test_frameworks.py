@@ -1157,3 +1157,84 @@ def test_r123_suppression():
     assert active == []
     assert len(suppressed) == 1
     assert suppressed[0].code == "R123"
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        (
+            """
+            import jax
+            key = jax.random.PRNGKey(42)
+            w1 = jax.random.normal(key, shape=(10, 10))
+            w2 = jax.random.normal(key, shape=(10, 10))
+            """,
+            [("R122", "warning")],
+        ),
+        (
+            """
+            import jax
+            key = jax.random.key(0)
+            key, subkey = jax.random.split(key)
+            w1 = jax.random.normal(subkey, shape=(10, 10))
+            key, subkey = jax.random.split(key)
+            w2 = jax.random.normal(subkey, shape=(10, 10))
+            """,
+            [],
+        ),
+        (
+            """
+            import jax
+            def sample_step(key):
+                x = jax.random.uniform(key, shape=(5,))
+                y = jax.random.normal(key, shape=(5,))
+                return x, y
+            """,
+            [("R122", "warning")],
+        ),
+        (
+            """
+            import jax
+            key = jax.random.PRNGKey(123)
+            keys = jax.random.split(key, 3)
+            x = jax.random.normal(keys[0], (4,))
+            y = jax.random.normal(keys[1], (4,))
+            """,
+            [],
+        ),
+        (
+            """
+            import jax
+            key = jax.random.PRNGKey(123)
+            keys = jax.random.split(key, 3)
+            x = jax.random.normal(keys[0], (4,))
+            y = jax.random.normal(keys[0], (4,))
+            """,
+            [("R122", "warning")],
+        ),
+        (
+            """
+            from jax import random
+            key = random.PRNGKey(42)
+            a = random.bernoulli(key)
+            b = random.bernoulli(key)
+            """,
+            [("R122", "warning")],
+        ),
+    ],
+)
+def test_r122_jax_key_reuse(source, expected):
+    assert findings(source) == expected
+
+
+def test_r122_suppression():
+    code = (
+        "import jax\n"
+        "key = jax.random.PRNGKey(42)\n"
+        "w1 = jax.random.normal(key, shape=(10, 10))\n"
+        "w2 = jax.random.normal(key, shape=(10, 10))  # repro-lens: ignore[R122]\n"
+    )
+    active, suppressed = analyze(code, "test.py")
+    assert active == []
+    assert len(suppressed) == 1
+    assert suppressed[0].code == "R122"

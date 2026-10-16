@@ -1040,6 +1040,7 @@ def analyze(
         scanner.cuda_manual_seed, scanner.cuda_manual_seed_all, scanner.emit
     )
     frameworks.check_ray_distributed_seeding(tree, scanner.emit, scanner.qualified)
+    frameworks.check_jax_key_reuse(tree, scanner.emit, scanner.qualified)
     suppressions = {}
     invalid = []
     known_codes = {
