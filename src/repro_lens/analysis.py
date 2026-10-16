@@ -874,7 +874,7 @@ class Scanner(ast.NodeVisitor):
                     if dataset_var:
                         output_vars = set(self._current_assign_targets)
                         current_tracker.fit_calls.append((node, dataset_var, output_vars, method))
-                        for out in output_vars:
+                        for out in sorted(output_vars):
                             ancestors = {dataset_var} | current_tracker.lineage.get(
                                 dataset_var, set()
                             )

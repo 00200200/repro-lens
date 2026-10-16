@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ml_project"
+version = "0.1.0"
+description = "A small, repeatable PyTorch experiment"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.0,<3",
+    "numpy>=1.24,<3",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1", "pre-commit>=4,<5"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ml_project"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.repro-lens]
+required-files = ["configs/baseline.toml", "data/README.md", "docs/reproducing.md"]
+
+[tool.repro-lens.verify]
+command = ["uv", "run", "--no-sync", "python", "-m", "ml_project.train", "--config", "configs/baseline.toml", "--output", "{output}"]
+inputs = ["src/ml_project/*.py", "configs/baseline.toml", "data/raw/synthetic.csv", "pyproject.toml"]
+metrics = ["accuracy", "loss"]
+artifacts = ["predictions.json"]
+timeout = 60
+atol = 1e-7
+rtol = 1e-5

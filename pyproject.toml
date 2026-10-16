@@ -22,6 +22,7 @@ packages = ["src/repro_lens"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "templates/sklearn" = "repro_lens/templates/sklearn"
+"templates/pytorch" = "repro_lens/templates/pytorch"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

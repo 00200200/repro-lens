@@ -69,7 +69,7 @@ repro-lens check --fix       # apply suggested seeds in-place
 
 Try a complete experiment validation:
 ```bash
-repro-lens init repro-demo --name repro_demo
+repro-lens init repro-demo --name repro_demo  # or --template pytorch
 cd repro-demo
 uv sync --locked
 repro-lens verify
