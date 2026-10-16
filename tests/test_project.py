@@ -328,3 +328,171 @@ def test_policy_severity_overrides(tmp_path):
     (tmp_path / "pyproject.toml").write_text('[tool.repro-lens.severities]\nR999 = "warning"\n')
     with pytest.raises(ValueError, match="Unknown rule code in severities: R999"):
         read_policy(tmp_path)
+
+
+def test_check_diff_prints_unified_diff_and_leaves_files_untouched(tmp_path, capsys):
+    source = (
+        "from sklearn.model_selection import train_test_split\n"
+        "from sklearn.ensemble import RandomForestClassifier\n\n"
+        "X_train, X_test, y_train, y_test = train_test_split(X, y)\n"
+        "clf = RandomForestClassifier()\n"
+    )
+    file_path = tmp_path / "train.py"
+    file_path.write_text(source, encoding="utf-8")
+
+    code = main(["check", "--root", str(tmp_path), "--diff"])
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "--- a/train.py" in captured.out
+    assert "+++ b/train.py" in captured.out
+    assert (
+        "+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)"
+        in captured.out
+    )
+    assert "+clf = RandomForestClassifier(random_state=42)" in captured.out
+    assert file_path.read_text(encoding="utf-8") == source
+
+
+def test_check_suggest_alias_matches_diff(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+
+    code_diff = main(["check", "--root", str(tmp_path), "--diff"])
+    out_diff = capsys.readouterr().out
+
+    code_suggest = main(["check", "--root", str(tmp_path), "--suggest"])
+    out_suggest = capsys.readouterr().out
+
+    assert code_diff == code_suggest == 1
+    assert out_diff == out_suggest
+    assert "train_test_split(X, y, random_state=42)" in out_diff
+
+
+def test_check_diff_preserves_multiline_indentation_and_existing_arguments(tmp_path, capsys):
+    source = (
+        "from sklearn.ensemble import RandomForestClassifier\n"
+        "from sklearn.model_selection import train_test_split\n\n"
+        "clf = RandomForestClassifier(\n"
+        "    n_estimators=100,\n"
+        "    max_depth=5,\n"
+        ")\n\n"
+        "split = train_test_split(\n"
+        "    features,\n"
+        "    labels\n"
+        ")\n\n"
+        "clf2 = RandomForestClassifier(\n"
+        "    n_estimators=50)\n"
+    )
+    (tmp_path / "model.py").write_text(source, encoding="utf-8")
+
+    code = main(["check", "--root", str(tmp_path), "--diff"])
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "    max_depth=5,\n+    random_state=42,\n" in captured.out
+    assert "    labels,\n+    random_state=42,\n" in captured.out
+    assert "    n_estimators=50, random_state=42)" in captured.out
+
+
+def test_check_diff_custom_seed(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+
+    code = main(["check", "--root", str(tmp_path), "--diff", "--seed", "1337"])
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "train_test_split(X, y, random_state=1337)" in captured.out
+
+
+def test_check_diff_replaces_existing_none_seed(tmp_path, capsys):
+    source = (
+        "from sklearn.model_selection import train_test_split\n"
+        "train_test_split(X, y, random_state=None)\n"
+    )
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+
+    code = main(["check", "--root", str(tmp_path), "--diff"])
+    captured = capsys.readouterr()
+    assert code == 1
+    assert (
+        "-train_test_split(X, y, random_state=None)\n+train_test_split(X, y, random_state=42)"
+        in captured.out
+    )
+
+
+def test_check_fix_modifies_files_in_place_and_resolves_findings(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    file_path = tmp_path / "train.py"
+    file_path.write_text(source, encoding="utf-8")
+
+    code = main(["check", "--root", str(tmp_path), "--fix"])
+    assert code == 0
+    updated = file_path.read_text(encoding="utf-8")
+    assert "train_test_split(X, y, random_state=42)" in updated
+    assert check(tmp_path)["findings"] == []
+
+
+def test_check_diff_and_fix_together(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    file_path = tmp_path / "train.py"
+    file_path.write_text(source, encoding="utf-8")
+
+    code = main(["check", "--root", str(tmp_path), "--diff", "--fix"])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "--- a/train.py" in captured.out
+    assert "+train_test_split(X, y, random_state=42)" in captured.out
+    assert "train_test_split(X, y, random_state=42)" in file_path.read_text(encoding="utf-8")
+    assert check(tmp_path)["findings"] == []
+
+
+def test_check_diff_output_file(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+    patch_file = tmp_path / "suggested.diff"
+
+    code = main(["check", "--root", str(tmp_path), "--diff", "--output", str(patch_file)])
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert patch_file.is_file()
+    patch_content = patch_file.read_text(encoding="utf-8")
+    assert "--- a/train.py" in patch_content
+    assert "+train_test_split(X, y, random_state=42)" in patch_content
+
+
+def test_check_diff_clean_project_returns_zero_and_empty_diff(tmp_path, capsys):
+    source = "print('reproducible code without stochastic calls')\n"
+    (tmp_path / "clean.py").write_text(source, encoding="utf-8")
+
+    code = main(["check", "--root", str(tmp_path), "--diff"])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert captured.out == ""
+
+
+def test_check_diff_skips_notebooks(tmp_path, capsys):
+    notebook = {
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "metadata": {},
+        "cells": [
+            {
+                "cell_type": "code",
+                "metadata": {},
+                "source": [
+                    "from sklearn.model_selection import train_test_split\n",
+                    "train_test_split(X, y)\n",
+                ],
+                "outputs": [],
+                "execution_count": 1,
+            }
+        ],
+    }
+    nb_path = tmp_path / "experiment.ipynb"
+    nb_path.write_text(json.dumps(notebook), encoding="utf-8")
+    nb_before = nb_path.read_text(encoding="utf-8")
+
+    main(["check", "--root", str(tmp_path), "--diff"])
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert nb_path.read_text(encoding="utf-8") == nb_before

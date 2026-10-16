@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import concurrent.futures
+import difflib
 import fnmatch
 import importlib.metadata
 import json
@@ -554,6 +556,270 @@ def add_ignores(root: Path, selected: list[str] | None = None) -> dict:
         if changed:
             path.write_text("".join(source_lines), encoding=encoding)
     return check(root, selected)
+
+
+SEED_KWARG_RULES = {
+    "R101": "random_state",
+    "R115": "random_state",
+    "R129": "random_state",
+    "R118": "seed",
+    "R127": "seed",
+}
+
+
+def find_call_node(tree: ast.AST, line: int, col: int) -> ast.Call | None:
+    """Locate the ast.Call node matching or containing the given 1-indexed line and col."""
+    target_col = col - 1
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and node.lineno == line and node.col_offset == target_col:
+            return node
+    line_calls = [
+        node for node in ast.walk(tree) if isinstance(node, ast.Call) and node.lineno == line
+    ]
+    if line_calls:
+        line_calls.sort(key=lambda n: abs(n.col_offset - target_col))
+        return line_calls[0]
+    span_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and node.lineno <= line <= getattr(node, "end_lineno", node.lineno)
+    ]
+    if span_calls:
+        span_calls.sort(
+            key=lambda n: (
+                getattr(n, "end_lineno", n.lineno) - n.lineno,
+                abs(n.col_offset - target_col),
+            )
+        )
+        return span_calls[0]
+    return None
+
+
+def insert_call_argument(source: str, call: ast.Call, kwarg_str: str) -> str:
+    """Insert or update a keyword argument into an ast.Call, preserving layout."""
+    lines = source.splitlines(keepends=True)
+    end_line_idx = call.end_lineno - 1
+    end_col = call.end_col_offset - 1
+
+    last_arg = None
+    if call.keywords:
+        last_arg = call.keywords[-1]
+    elif call.args:
+        last_arg = call.args[-1]
+
+    if last_arg is None:
+        if call.lineno == call.end_lineno:
+            line = lines[end_line_idx]
+            lines[end_line_idx] = line[:end_col] + kwarg_str + line[end_col:]
+        else:
+            call_start_line = lines[call.lineno - 1]
+            call_indent = call_start_line[: len(call_start_line) - len(call_start_line.lstrip())]
+            arg_indent = call_indent + "    "
+            lines.insert(end_line_idx, f"{arg_indent}{kwarg_str},\n")
+    else:
+        if last_arg.end_lineno == call.end_lineno:
+            line = lines[end_line_idx]
+            before_paren = line[:end_col].rstrip()
+            if before_paren.endswith(","):
+                new_line = before_paren + " " + kwarg_str + line[end_col:]
+            else:
+                new_line = before_paren + ", " + kwarg_str + line[end_col:]
+            lines[end_line_idx] = new_line
+        else:
+            last_line = lines[last_arg.end_lineno - 1]
+            after_last = last_line[last_arg.end_col_offset :]
+            if not after_last.lstrip().startswith(","):
+                lines[last_arg.end_lineno - 1] = (
+                    last_line[: last_arg.end_col_offset] + "," + after_last
+                )
+
+            closing_line = lines[end_line_idx]
+            before_paren = closing_line[:end_col]
+            if before_paren.strip() == "":
+                arg_line = lines[last_arg.end_lineno - 1]
+                arg_indent = arg_line[: len(arg_line) - len(arg_line.lstrip())]
+                lines.insert(end_line_idx, f"{arg_indent}{kwarg_str},\n")
+            else:
+                before_paren_s = before_paren.rstrip()
+                if before_paren_s.endswith(","):
+                    new_line = before_paren_s + " " + kwarg_str + closing_line[end_col:]
+                else:
+                    new_line = before_paren_s + ", " + kwarg_str + closing_line[end_col:]
+                lines[end_line_idx] = new_line
+
+    return "".join(lines)
+
+
+def resolve_fix_kwarg(
+    finding: dict,
+    node: ast.Call | None,
+    custom_rules: dict[str, CustomRule],
+    seed: int = 42,
+) -> str | None:
+    code = finding.get("code")
+    if code in SEED_KWARG_RULES:
+        kw = SEED_KWARG_RULES[code]
+        return f"{kw}={seed}"
+    if code == "R102":
+        if node and (
+            (isinstance(node.func, ast.Attribute) and node.func.attr == "SeedSequence")
+            or (isinstance(node.func, ast.Name) and node.func.id == "SeedSequence")
+        ):
+            return f"entropy={seed}"
+        return f"seed={seed}"
+    if code == "R103":
+        return f"x={seed}"
+    if code in custom_rules:
+        crule = custom_rules[code]
+        if crule.missing_kwargs:
+            return f"{crule.missing_kwargs[0]}={seed}"
+    return None
+
+
+def suggest_project_fixes(
+    root: Path,
+    selected: list[str] | None = None,
+    seed: int = 42,
+    ignores_only: bool = False,
+) -> tuple[dict[str, str], dict]:
+    """Compute automated fixes for findings in Python source files.
+
+    Returns (modifications, report) where modifications maps relative path to new source.
+    """
+    root = root.resolve()
+    report = check(root, selected)
+    custom_rules = {r.id: r for r in load_custom_rules(root)}
+    suppressible = {*SUPPRESSIBLE_CODES, *custom_rules.keys()}
+
+    by_file: dict[str, list[dict]] = defaultdict(list)
+    for finding in report["findings"]:
+        if "cell" in finding:
+            continue
+        code = finding["code"]
+        if ignores_only:
+            if code in suppressible:
+                by_file[finding["path"]].append(finding)
+        else:
+            if code in SEED_KWARG_RULES or code in {"R102", "R103"} or code in suppressible:
+                by_file[finding["path"]].append(finding)
+
+    modifications: dict[str, str] = {}
+    for relative, findings in sorted(by_file.items()):
+        path = root / relative
+        if path.suffix != ".py" or not path.is_file():
+            continue
+        try:
+            with tokenize.open(path) as handle:
+                original_source = handle.read()
+        except (OSError, SyntaxError, UnicodeDecodeError):
+            continue
+
+        current_source = original_source
+        visited_findings: set[tuple[int, int, str]] = set()
+
+        max_passes = len(findings) * 3 + 10
+        for _ in range(max_passes):
+            try:
+                tree = ast.parse(current_source)
+            except SyntaxError:
+                break
+
+            current_findings, _ = analyze(current_source, relative, list(custom_rules.values()))
+            actionable = [
+                f.to_dict() if hasattr(f, "to_dict") else f
+                for f in current_findings
+                if (f.line, f.column, f.code) not in visited_findings
+                and (
+                    f.code in suppressible
+                    or f.code in SEED_KWARG_RULES
+                    or f.code in {"R102", "R103"}
+                )
+            ]
+            if not actionable:
+                break
+
+            target = max(actionable, key=lambda f: (f["line"], f["column"]))
+            key = (target["line"], target["column"], target["code"])
+            visited_findings.add(key)
+
+            new_source = None
+            if not ignores_only:
+                call_node = find_call_node(tree, target["line"], target["column"])
+                kwarg = resolve_fix_kwarg(target, call_node, custom_rules, seed=seed)
+                if call_node and kwarg:
+                    kw_name, kw_val = kwarg.split("=", 1)
+                    existing_kw = next((k for k in call_node.keywords if k.arg == kw_name), None)
+                    if existing_kw and existing_kw.value:
+                        lines = current_source.splitlines(keepends=True)
+                        val_node = existing_kw.value
+                        if val_node.lineno == val_node.end_lineno:
+                            l_idx = val_node.lineno - 1
+                            line = lines[l_idx]
+                            prefix = line[: val_node.col_offset]
+                            suffix = line[val_node.end_col_offset :]
+                            lines[l_idx] = f"{prefix}{kw_val}{suffix}"
+                            new_source = "".join(lines)
+                    else:
+                        new_source = insert_call_argument(current_source, call_node, kwarg)
+
+            if new_source is None and target["code"] in suppressible:
+                lines = current_source.splitlines(keepends=True)
+                if 1 <= target["line"] <= len(lines):
+                    updated_line = append_ignore_comment(
+                        lines[target["line"] - 1], {target["code"]}
+                    )
+                    if updated_line != lines[target["line"] - 1]:
+                        lines[target["line"] - 1] = updated_line
+                        new_source = "".join(lines)
+
+            if new_source is not None and new_source != current_source:
+                current_source = new_source
+
+        if current_source != original_source:
+            modifications[relative] = current_source
+
+    return modifications, report
+
+
+def render_diff(root: Path, modifications: dict[str, str]) -> str:
+    """Generate a unified diff across all modified files."""
+    root = root.resolve()
+    diff_chunks: list[str] = []
+    for relative, new_source in sorted(modifications.items()):
+        path = root / relative
+        if not path.is_file():
+            continue
+        try:
+            with tokenize.open(path) as handle:
+                orig_lines = handle.readlines()
+        except OSError:
+            orig_lines = []
+        new_lines = new_source.splitlines(keepends=True)
+        rel_posix = Path(relative).as_posix()
+        diff = difflib.unified_diff(
+            orig_lines,
+            new_lines,
+            fromfile=f"a/{rel_posix}",
+            tofile=f"b/{rel_posix}",
+        )
+        diff_chunks.extend(diff)
+    return "".join(diff_chunks)
+
+
+def apply_project_fixes(root: Path, modifications: dict[str, str]) -> None:
+    """Write modified source code back to disk using each file's encoding."""
+    root = root.resolve()
+    for relative, new_source in modifications.items():
+        path = root / relative
+        encoding = "utf-8"
+        if path.is_file():
+            try:
+                with tokenize.open(path) as handle:
+                    encoding = handle.encoding
+            except OSError:
+                pass
+        path.write_text(new_source, encoding=encoding)
 
 
 def _paint(text: str, style: str, enabled: bool) -> str:

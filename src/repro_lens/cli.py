@@ -14,7 +14,15 @@ from .analysis import RULES
 from .capsule import create_capsule, inspect_capsule, verify_capsule
 from .comparison import agent_review, compare_reports, render_agent_review, render_comparison
 from .lsp import run as run_lsp
-from .project import add_ignores, check, render, write_step_summary
+from .project import (
+    add_ignores,
+    apply_project_fixes,
+    check,
+    render,
+    render_diff,
+    suggest_project_fixes,
+    write_step_summary,
+)
 from .sarif import render_sarif, to_github
 from .verify import verify
 
@@ -108,6 +116,28 @@ def main(argv=None):
             "Append '# repro-lens: ignore[CODE] -- TODO: Review reproducibility' "
             "to each flagged Python call site"
         ),
+    )
+    scan.add_argument(
+        "--diff",
+        action="store_true",
+        help="Print unified diff of suggested reproducibility fixes without modifying files",
+    )
+    scan.add_argument(
+        "--suggest",
+        dest="diff",
+        action="store_true",
+        help="Alias for --diff: print unified diff of suggested reproducibility fixes",
+    )
+    scan.add_argument(
+        "--fix",
+        action="store_true",
+        help="Apply suggested reproducibility fixes in-place",
+    )
+    scan.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Seed value to use for automated suggestions (default: 42)",
     )
     replay = sub.add_parser(
         "verify", help="Execute the configured local experiment twice (not sandboxed)"
@@ -279,11 +309,35 @@ def main(argv=None):
             write_step_summary(report)
             exit_codes = {"matched": 0, "mismatch": 1, "stable": 0, "unstable": 1, "error": 2}
             return exit_codes.get(report["status"], 2)
-        report = (
-            add_ignores(args.root, args.files)
-            if args.add_ignores
-            else check(args.root, args.files, jobs=args.jobs)
-        )
+        if args.diff or args.fix:
+            modifications, report = suggest_project_fixes(
+                args.root,
+                args.files,
+                seed=args.seed,
+                ignores_only=args.add_ignores,
+            )
+            diff_text = render_diff(args.root, modifications)
+            if args.fix:
+                apply_project_fixes(args.root, modifications)
+                report = check(args.root, args.files, jobs=args.jobs)
+            if args.diff:
+                if args.output:
+                    args.output.write_text(diff_text, encoding="utf-8")
+                else:
+                    sys.stdout.write(diff_text)
+                write_step_summary(report, repository_prefix(args.root))
+                failing = {"error"} | ({"warning"} if args.fail_on == "warning" else set())
+                if args.fix:
+                    return int(any(f["severity"] in failing for f in report["findings"]))
+                return int(
+                    bool(diff_text) or any(f["severity"] in failing for f in report["findings"])
+                )
+        else:
+            report = (
+                add_ignores(args.root, args.files)
+                if args.add_ignores
+                else check(args.root, args.files, jobs=args.jobs)
+            )
         writing_file = args.output is not None
         is_tty = sys.stdout.isatty()
         format_ = resolve_check_format(args.format, writing_file=writing_file, is_tty=is_tty)
