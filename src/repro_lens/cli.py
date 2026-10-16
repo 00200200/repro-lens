@@ -21,6 +21,7 @@ from .project import (
     render,
     render_diff,
     suggest_project_fixes,
+    write_baseline,
     write_step_summary,
 )
 from .sarif import render_sarif, to_github
@@ -138,6 +139,27 @@ def main(argv=None):
         type=int,
         default=42,
         help="Seed value to use for automated suggestions (default: 42)",
+    )
+    scan.add_argument(
+        "--baseline",
+        nargs="?",
+        const=Path(".repro-lens-baseline.json"),
+        type=Path,
+        default=None,
+        help="Filter out legacy findings recorded in the baseline JSON file",
+    )
+    scan.add_argument(
+        "--write-baseline",
+        nargs="?",
+        const=Path(".repro-lens-baseline.json"),
+        type=Path,
+        default=None,
+        help="Record all detected findings into a baseline JSON file",
+    )
+    scan.add_argument(
+        "--clean-baseline",
+        action="store_true",
+        help="Remove stale baseline entries when used with --baseline",
     )
     replay = sub.add_parser(
         "verify", help="Execute the configured local experiment twice (not sandboxed)"
@@ -309,6 +331,17 @@ def main(argv=None):
             write_step_summary(report)
             exit_codes = {"matched": 0, "mismatch": 1, "stable": 0, "unstable": 1, "error": 2}
             return exit_codes.get(report["status"], 2)
+        if args.write_baseline:
+            baseline_path = (
+                args.write_baseline
+                if args.write_baseline.is_absolute()
+                else args.root / args.write_baseline
+            )
+            report = check(args.root, args.files, jobs=args.jobs, baseline=None)
+            write_baseline(baseline_path, report["findings"])
+            count = len(report["findings"])
+            print(f"repro-lens: wrote {count} baseline findings to {baseline_path.name}")
+            return 0
         if args.diff or args.fix:
             modifications, report = suggest_project_fixes(
                 args.root,
@@ -319,7 +352,7 @@ def main(argv=None):
             diff_text = render_diff(args.root, modifications)
             if args.fix:
                 apply_project_fixes(args.root, modifications)
-                report = check(args.root, args.files, jobs=args.jobs)
+                report = check(args.root, args.files, jobs=args.jobs, baseline=args.baseline)
             if args.diff:
                 if args.output:
                     args.output.write_text(diff_text, encoding="utf-8")
@@ -336,8 +369,13 @@ def main(argv=None):
             report = (
                 add_ignores(args.root, args.files)
                 if args.add_ignores
-                else check(args.root, args.files, jobs=args.jobs)
+                else check(args.root, args.files, jobs=args.jobs, baseline=args.baseline)
             )
+            if args.clean_baseline and args.baseline:
+                baseline_path = (
+                    args.baseline if args.baseline.is_absolute() else args.root / args.baseline
+                )
+                write_baseline(baseline_path, report.get("suppressed", []))
         writing_file = args.output is not None
         is_tty = sys.stdout.isatty()
         format_ = resolve_check_format(args.format, writing_file=writing_file, is_tty=is_tty)
