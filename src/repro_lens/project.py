@@ -16,6 +16,10 @@ from dataclasses import replace
 from pathlib import Path
 
 from .analysis import RULES, CustomRule, Finding, analyze
+from .autofix import (
+    lossless_apply_call_fix,
+    lossless_insert_call_argument,
+)
 from .frameworks import RULES as FRAMEWORK_RULES
 from .notebooks import check_execution_order, notebook_source
 
@@ -690,58 +694,8 @@ def find_call_node(tree: ast.AST, line: int, col: int) -> ast.Call | None:
 
 
 def insert_call_argument(source: str, call: ast.Call, kwarg_str: str) -> str:
-    """Insert or update a keyword argument into an ast.Call, preserving layout."""
-    lines = source.splitlines(keepends=True)
-    end_line_idx = call.end_lineno - 1
-    end_col = call.end_col_offset - 1
-
-    last_arg = None
-    if call.keywords:
-        last_arg = call.keywords[-1]
-    elif call.args:
-        last_arg = call.args[-1]
-
-    if last_arg is None:
-        if call.lineno == call.end_lineno:
-            line = lines[end_line_idx]
-            lines[end_line_idx] = line[:end_col] + kwarg_str + line[end_col:]
-        else:
-            call_start_line = lines[call.lineno - 1]
-            call_indent = call_start_line[: len(call_start_line) - len(call_start_line.lstrip())]
-            arg_indent = call_indent + "    "
-            lines.insert(end_line_idx, f"{arg_indent}{kwarg_str},\n")
-    else:
-        if last_arg.end_lineno == call.end_lineno:
-            line = lines[end_line_idx]
-            before_paren = line[:end_col].rstrip()
-            if before_paren.endswith(","):
-                new_line = before_paren + " " + kwarg_str + line[end_col:]
-            else:
-                new_line = before_paren + ", " + kwarg_str + line[end_col:]
-            lines[end_line_idx] = new_line
-        else:
-            last_line = lines[last_arg.end_lineno - 1]
-            after_last = last_line[last_arg.end_col_offset :]
-            if not after_last.lstrip().startswith(","):
-                lines[last_arg.end_lineno - 1] = (
-                    last_line[: last_arg.end_col_offset] + "," + after_last
-                )
-
-            closing_line = lines[end_line_idx]
-            before_paren = closing_line[:end_col]
-            if before_paren.strip() == "":
-                arg_line = lines[last_arg.end_lineno - 1]
-                arg_indent = arg_line[: len(arg_line) - len(arg_line.lstrip())]
-                lines.insert(end_line_idx, f"{arg_indent}{kwarg_str},\n")
-            else:
-                before_paren_s = before_paren.rstrip()
-                if before_paren_s.endswith(","):
-                    new_line = before_paren_s + " " + kwarg_str + closing_line[end_col:]
-                else:
-                    new_line = before_paren_s + ", " + kwarg_str + closing_line[end_col:]
-                lines[end_line_idx] = new_line
-
-    return "".join(lines)
+    """Insert or update a keyword argument into an ast.Call, preserving layout and comments."""
+    return lossless_insert_call_argument(source, call, kwarg_str)
 
 
 def resolve_fix_kwarg(
@@ -841,20 +795,7 @@ def suggest_project_fixes(
                 call_node = find_call_node(tree, target["line"], target["column"])
                 kwarg = resolve_fix_kwarg(target, call_node, custom_rules, seed=seed)
                 if call_node and kwarg:
-                    kw_name, kw_val = kwarg.split("=", 1)
-                    existing_kw = next((k for k in call_node.keywords if k.arg == kw_name), None)
-                    if existing_kw and existing_kw.value:
-                        lines = current_source.splitlines(keepends=True)
-                        val_node = existing_kw.value
-                        if val_node.lineno == val_node.end_lineno:
-                            l_idx = val_node.lineno - 1
-                            line = lines[l_idx]
-                            prefix = line[: val_node.col_offset]
-                            suffix = line[val_node.end_col_offset :]
-                            lines[l_idx] = f"{prefix}{kw_val}{suffix}"
-                            new_source = "".join(lines)
-                    else:
-                        new_source = insert_call_argument(current_source, call_node, kwarg)
+                    new_source = lossless_apply_call_fix(current_source, call_node, kwarg)
 
             if new_source is None and target["code"] in suppressible:
                 lines = current_source.splitlines(keepends=True)
