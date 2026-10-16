@@ -61,6 +61,12 @@ repro-lens check --root /path/to/project
 train_test_split(X, y)  # ❌ R101: no explicit random_state
 ```
 
+Preview automated fixes or apply them in-place:
+```bash
+repro-lens check --diff      # preview unified diff with suggested seeds
+repro-lens check --fix       # apply suggested seeds in-place
+```
+
 Try a complete experiment validation:
 ```bash
 repro-lens init repro-demo --name repro_demo

@@ -43,9 +43,10 @@ def split_data(features, labels, seed):
     return train_test_split(features, labels, random_state=seed)
 ```
 
-Run `repro-lens check` again. The warning is gone. The caller still has to supply a
-valid seed or RNG; the checker does not evaluate that value. If upstream RNG control
-is intentional, document it using a [justified suppression](rules.md) instead.
+Run `repro-lens check` again. The warning is gone. You can also run `repro-lens check --diff`
+to preview automated seed suggestions as a unified diff, or `repro-lens check --fix` to apply
+them in-place. The caller still has to supply a valid seed or RNG; the checker does not evaluate
+that value. If upstream RNG control is intentional, document it using a [justified suppression](rules.md) instead.
 
 ## Run an actual repeatability check
 
