@@ -13,6 +13,7 @@ CLI and coding-agent skill; each links to its command, expected output and limit
 | Try the tool on my existing project | [Advisory rollout](../docs/trying-an-existing-project.md) | Static analysis of my source | Findings to review before enabling a blocking hook |
 | Review a coding agent's edit to my experiment | [Agent workflow](../docs/agent-review.md) | My reviewed experiment command, before and after the edit | Reports show output changes and verification-contract changes |
 | Understand distributed training seed boundaries | [DeepSpeed/Megatron-LM guide](deepspeed_megatron_review/) | Configuration and verification guidance; no GPU run is started | A checklist for 3D parallelism, RNG trackers and sampler epochs |
+| Make Hugging Face fine-tuning reproducible | [Hugging Face tutorial](huggingface_review/) | Screening demo and verification contract; no heavy download needed | Resolves R117 (TrainingArguments determinism) and R127 (unseeded dataset shuffle) |
 
 ## Run the smallest demo
 
