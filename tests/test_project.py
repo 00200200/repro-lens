@@ -610,3 +610,16 @@ def test_baseline_missing_file_raises_error(tmp_path, capsys):
     assert main(["check", "--root", str(tmp_path), "--baseline", "missing.json"]) == 2
     captured = capsys.readouterr()
     assert "Baseline file does not exist" in captured.err
+
+
+def test_suggest_fixes_for_distributed_sampler_r121(tmp_path):
+    from repro_lens.project import suggest_project_fixes
+
+    source = (
+        "from torch.utils.data.distributed import DistributedSampler\n"
+        "sampler = DistributedSampler(dataset)\n"
+    )
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+    modifications, report = suggest_project_fixes(tmp_path, seed=42)
+    assert "train.py" in modifications
+    assert "DistributedSampler(dataset, seed=42)" in modifications["train.py"]

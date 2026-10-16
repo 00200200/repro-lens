@@ -1238,3 +1238,99 @@ def test_r122_suppression():
     assert active == []
     assert len(suppressed) == 1
     assert suppressed[0].code == "R122"
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("DistributedSampler(dataset)", [("R121", "review")]),
+        ("DistributedSampler(dataset, shuffle=True)", [("R121", "review")]),
+        ("DistributedSampler(dataset, seed=None)", [("R121", "review")]),
+        ("DistributedSampler(dataset, seed=42)", []),
+        ("DistributedSampler(dataset, 4, 0, True, 42)", []),
+        ("DistributedSampler(dataset, shuffle=False)", []),
+        ("DistributedSampler(dataset, shuffle=False, seed=None)", []),
+        (
+            """
+            from torch.utils.data.distributed import DistributedSampler
+            sampler = DistributedSampler(dataset)
+            """,
+            [("R121", "review")],
+        ),
+        (
+            """
+            from torch.utils.data.distributed import DistributedSampler
+            sampler = DistributedSampler(dataset, seed=123)
+            """,
+            [],
+        ),
+    ],
+)
+def test_r121_unseeded_distributed_sampler(source, expected):
+    assert findings(source) == expected
+
+
+def test_r121_missing_set_epoch_in_training_loop():
+    # ❌ Fails when set_epoch is missing
+    bad_code = """
+    from torch.utils.data import DataLoader
+    from torch.utils.data.distributed import DistributedSampler
+
+    sampler = DistributedSampler(dataset, seed=42)
+    loader = DataLoader(dataset, sampler=sampler)
+    for epoch in range(epochs):
+        for batch in loader:
+            train_step(batch)
+    """
+    assert findings(bad_code) == [("R121", "review")]
+
+    # ✅ Passes when set_epoch is called
+    good_code = """
+    from torch.utils.data import DataLoader
+    from torch.utils.data.distributed import DistributedSampler
+
+    sampler = DistributedSampler(dataset, seed=42)
+    loader = DataLoader(dataset, sampler=sampler)
+    for epoch in range(epochs):
+        sampler.set_epoch(epoch)
+        for batch in loader:
+            train_step(batch)
+    """
+    assert findings(good_code) == []
+
+    # ✅ Passes when shuffle=False (e.g. evaluation)
+    eval_code = """
+    from torch.utils.data import DataLoader
+    from torch.utils.data.distributed import DistributedSampler
+
+    val_sampler = DistributedSampler(val_dataset, shuffle=False)
+    val_loader = DataLoader(val_dataset, sampler=val_sampler)
+    for epoch in range(epochs):
+        for batch in val_loader:
+            eval_step(batch)
+    """
+    assert findings(eval_code) == []
+
+    # ❌ Flags both unseeded sampler and missing set_epoch
+    both_bad = """
+    from torch.utils.data import DataLoader
+    from torch.utils.data.distributed import DistributedSampler
+
+    sampler = DistributedSampler(dataset)
+    loader = DataLoader(dataset, sampler=sampler)
+    for epoch in range(epochs):
+        for batch in loader:
+            train_step(batch)
+    """
+    assert findings(both_bad) == [("R121", "review"), ("R121", "review")]
+
+
+def test_r121_suppression():
+    code = (
+        "from torch.utils.data.distributed import DistributedSampler\n"
+        "s = DistributedSampler(dataset)  # repro-lens: ignore[R121] -- Unseeded.\n"
+    )
+    active, suppressed = analyze(code, "test.py")
+    assert active == []
+    assert len(suppressed) == 1
+    assert suppressed[0].code == "R121"
