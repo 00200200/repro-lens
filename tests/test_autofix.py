@@ -3,7 +3,6 @@ from pathlib import Path
 
 from repro_lens.autofix import (
     LosslessCST,
-    find_call_tokens,
     lossless_apply_call_fix,
     lossless_insert_call_argument,
     lossless_replace_call_argument,
@@ -42,32 +41,16 @@ def test_lossless_insert_single_line_with_trailing_comma():
 
 
 def test_lossless_insert_multiline_with_trailing_comma_and_comment():
-    source = (
-        "train_test_split(\n"
-        "    X,\n"
-        "    y,  # target labels\n"
-        ")\n"
-    )
+    source = "train_test_split(\n    X,\n    y,  # target labels\n)\n"
     call = _get_call(source)
     res = lossless_insert_call_argument(source, call, "random_state=42")
-    expected = (
-        "train_test_split(\n"
-        "    X,\n"
-        "    y,  # target labels\n"
-        "    random_state=42,\n"
-        ")\n"
-    )
+    expected = "train_test_split(\n    X,\n    y,  # target labels\n    random_state=42,\n)\n"
     assert res == expected
     ast.parse(res)
 
 
 def test_lossless_insert_multiline_without_trailing_comma_with_comment():
-    source = (
-        "train_test_split(\n"
-        "    X,\n"
-        "    y  # target labels without comma\n"
-        ")\n"
-    )
+    source = "train_test_split(\n    X,\n    y  # target labels without comma\n)\n"
     call = _get_call(source)
     res = lossless_insert_call_argument(source, call, "random_state=42")
     expected = (
@@ -90,22 +73,10 @@ def test_lossless_replace_single_line_none():
 
 
 def test_lossless_replace_multiline_with_comment():
-    source = (
-        "train_test_split(\n"
-        "    X,\n"
-        "    y,\n"
-        "    random_state=None,  # unseeded baseline\n"
-        ")\n"
-    )
+    source = "train_test_split(\n    X,\n    y,\n    random_state=None,  # unseeded baseline\n)\n"
     call = _get_call(source)
     res = lossless_replace_call_argument(source, call, "random_state", "42")
-    expected = (
-        "train_test_split(\n"
-        "    X,\n"
-        "    y,\n"
-        "    random_state=42,  # unseeded baseline\n"
-        ")\n"
-    )
+    expected = "train_test_split(\n    X,\n    y,\n    random_state=42,  # unseeded baseline\n)\n"
     assert res == expected
     ast.parse(res)
 
@@ -146,7 +117,8 @@ def test_nested_calls_correct_target():
     source = "DataLoader(TensorDataset(X, y), shuffle=True)"
     tree = ast.parse(source)
     dataset_call = [
-        n for n in ast.walk(tree)
+        n
+        for n in ast.walk(tree)
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "TensorDataset"
     ][0]
     res = lossless_insert_call_argument(source, dataset_call, "seed=42")

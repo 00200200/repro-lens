@@ -12,7 +12,6 @@ import difflib
 import io
 import token
 import tokenize
-from typing import Sequence
 
 
 def compute_line_offsets(source: str) -> list[int]:
@@ -287,8 +286,7 @@ class LosslessCST:
         span_calls = [
             n
             for n in ast.walk(self._tree)
-            if isinstance(n, ast.Call)
-            and n.lineno <= line <= getattr(n, "end_lineno", n.lineno)
+            if isinstance(n, ast.Call) and n.lineno <= line <= getattr(n, "end_lineno", n.lineno)
         ]
         if span_calls:
             span_calls.sort(

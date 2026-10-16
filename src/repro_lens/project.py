@@ -19,7 +19,6 @@ from .analysis import RULES, CustomRule, Finding, analyze
 from .autofix import (
     lossless_apply_call_fix,
     lossless_insert_call_argument,
-    lossless_replace_call_argument,
 )
 from .frameworks import RULES as FRAMEWORK_RULES
 from .notebooks import check_execution_order, notebook_source
@@ -697,7 +696,6 @@ def find_call_node(tree: ast.AST, line: int, col: int) -> ast.Call | None:
 def insert_call_argument(source: str, call: ast.Call, kwarg_str: str) -> str:
     """Insert or update a keyword argument into an ast.Call, preserving layout and comments."""
     return lossless_insert_call_argument(source, call, kwarg_str)
-
 
 
 def resolve_fix_kwarg(
