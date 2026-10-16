@@ -22,6 +22,7 @@ RULES = {
     "R117": "Hugging Face TrainingArguments omits full_determinism=True or data_seed.",
     "R118": "Polars sample() has no explicit seed; review random subsampling.",
     "R120": "PyTorch deterministic algorithms are enabled without CUBLAS_WORKSPACE_CONFIG.",
+    "R121": "PyTorch DistributedSampler is unseeded or missing set_epoch() in training loop.",
     "R122": "JAX PRNG key reused across multiple stochastic calls without splitting.",
     "R123": "Ray distributed worker or train loop uses fixed seed without worker rank or ID.",
     "R124": "torch.cuda.manual_seed seeds only the current GPU without manual_seed_all.",
@@ -152,6 +153,10 @@ TF_NONDETERMINISTIC = {
 }
 LOADERS = {"torch.utils.data.DataLoader", "torch.utils.data.dataloader.DataLoader"}
 SPLITS = {"torch.utils.data.random_split", "torch.utils.data.dataset.random_split"}
+DISTRIBUTED_SAMPLERS = {
+    "torch.utils.data.distributed.DistributedSampler",
+    "torch.utils.data.DistributedSampler",
+}
 SAMPLERS = {
     f"{module}.{name}": positions
     for module in ("torch.utils.data", "torch.utils.data.sampler")
@@ -1046,6 +1051,8 @@ def check_call(node, name, emit, resolve=None, qualified=None):
         check_catboost(node, name, options, emit)
     elif name in LOADERS or name in SPLITS:
         check_data(node, name, emit, resolve, qualified)
+    elif name in DISTRIBUTED_SAMPLERS or is_distributed_sampler_call(node.func, qualified):
+        check_distributed_sampler(node, name or "DistributedSampler", emit, resolve)
     elif name in SAMPLERS:
         check_generator(node, name, Arguments.call(node, SAMPLERS[name], resolve), emit, qualified)
     elif name in TF_NONDETERMINISTIC:
@@ -1618,3 +1625,175 @@ def check_jax_key_reuse(tree: ast.AST, emit, qualified=None):
             )
             for stmt in node.body:
                 func_visitor.visit(stmt)
+
+
+def is_distributed_sampler_call(func_node: ast.AST, qualified=None) -> bool:
+    if qualified:
+        qname = qualified(func_node)
+        if qname in DISTRIBUTED_SAMPLERS:
+            return True
+    if isinstance(func_node, ast.Name) and func_node.id == "DistributedSampler":
+        return True
+    if isinstance(func_node, ast.Attribute) and func_node.attr == "DistributedSampler":
+        return True
+    return False
+
+
+def check_distributed_sampler(node, name, emit, resolve=None):
+    """Review unseeded DistributedSampler calls (R121)."""
+    options = Arguments.call(
+        node, ("dataset", "num_replicas", "rank", "shuffle", "seed", "drop_last"), resolve
+    )
+    shuffle = options.value("shuffle", True)
+    if shuffle is False:
+        return
+    seed_node = options.get("seed")
+    if seed_node is UNKNOWN:
+        return
+    if seed_node is MISSING or (seed_node is not UNKNOWN and constant(seed_node) is None):
+        emit(
+            node,
+            "R121",
+            f"{name} has no explicit seed; review distributed worker RNG synchronization.",
+            "Pass seed=... explicitly to DistributedSampler (e.g. "
+            "DistributedSampler(dataset, seed=seed)) to ensure reproducible distributed "
+            "shuffling across ranks.",
+            "review",
+        )
+
+
+def is_distributed_sampler_node(node: ast.AST, qualified=None) -> tuple[bool, bool]:
+    """Check if node is DistributedSampler call, returning (is_sampler, is_shuffled)."""
+    if not isinstance(node, ast.Call):
+        return False, False
+    if not is_distributed_sampler_call(node.func, qualified):
+        return False, False
+    options = Arguments.call(
+        node, ("dataset", "num_replicas", "rank", "shuffle", "seed", "drop_last")
+    )
+    shuffle_val = options.value("shuffle", True)
+    is_shuffled = shuffle_val is not False
+    return True, is_shuffled
+
+
+def check_distributed_sampler_epoch(tree: ast.AST, emit, qualified=None):
+    """Detect missing sampler.set_epoch(epoch) in PyTorch DDP training loops (R121)."""
+    shuffled_samplers: set[str] = set()
+    distributed_loaders: set[str] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            is_ds, is_shuffled = is_distributed_sampler_node(node.value, qualified)
+            if is_ds and is_shuffled:
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        shuffled_samplers.add(target.id)
+                    elif isinstance(target, ast.Attribute):
+                        shuffled_samplers.add(target.attr)
+        elif isinstance(node, ast.AnnAssign) and node.value:
+            is_ds, is_shuffled = is_distributed_sampler_node(node.value, qualified)
+            if is_ds and is_shuffled:
+                target = node.target
+                if isinstance(target, ast.Name):
+                    shuffled_samplers.add(target.id)
+                elif isinstance(target, ast.Attribute):
+                    shuffled_samplers.add(target.attr)
+
+    if not shuffled_samplers:
+        return
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            val = node.value if isinstance(node, ast.Assign) else node.value
+            if isinstance(val, ast.Call):
+                is_loader = False
+                if qualified and qualified(val.func) in LOADERS:
+                    is_loader = True
+                elif isinstance(val.func, ast.Name) and "DataLoader" in val.func.id:
+                    is_loader = True
+                elif isinstance(val.func, ast.Attribute) and val.func.attr == "DataLoader":
+                    is_loader = True
+
+                if is_loader:
+                    uses_shuffled_sampler = False
+                    for kw in val.keywords:
+                        if kw.arg in {"sampler", "batch_sampler"}:
+                            if isinstance(kw.value, ast.Name) and kw.value.id in shuffled_samplers:
+                                uses_shuffled_sampler = True
+                            elif (
+                                isinstance(kw.value, ast.Attribute)
+                                and kw.value.attr in shuffled_samplers
+                            ):
+                                uses_shuffled_sampler = True
+                            else:
+                                is_ds, is_sh = is_distributed_sampler_node(kw.value, qualified)
+                                if is_ds and is_sh:
+                                    uses_shuffled_sampler = True
+
+                    if not uses_shuffled_sampler and len(val.args) >= 4:
+                        arg3 = val.args[3]
+                        if isinstance(arg3, ast.Name) and arg3.id in shuffled_samplers:
+                            uses_shuffled_sampler = True
+
+                    if uses_shuffled_sampler:
+                        target = node.targets[0] if isinstance(node, ast.Assign) else node.target
+                        if isinstance(target, ast.Name):
+                            distributed_loaders.add(target.id)
+                        elif isinstance(target, ast.Attribute):
+                            distributed_loaders.add(target.attr)
+
+    candidate_loaders = distributed_loaders or {
+        "loader",
+        "dataloader",
+        "train_loader",
+        "train_dataloader",
+        "train_dl",
+        "data_loader",
+    }
+
+    def iterates_dataloader(iter_node: ast.AST) -> bool:
+        if isinstance(iter_node, ast.Name):
+            return iter_node.id in candidate_loaders or "loader" in iter_node.id.lower()
+        if isinstance(iter_node, ast.Attribute):
+            return iter_node.attr in candidate_loaders or "loader" in iter_node.attr.lower()
+        if isinstance(iter_node, ast.Call):
+            if isinstance(iter_node.func, ast.Name):
+                if iter_node.func.id in {"enumerate", "tqdm"}:
+                    return bool(iter_node.args) and iterates_dataloader(iter_node.args[0])
+                if iter_node.func.id in {"DataLoader", "train_dataloader"}:
+                    return True
+            if isinstance(iter_node.func, ast.Attribute):
+                if iter_node.func.attr == "DataLoader":
+                    return True
+        return False
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+            has_inner_loader_loop = False
+            for child in ast.walk(node):
+                if child is not node and isinstance(child, (ast.For, ast.AsyncFor)):
+                    if iterates_dataloader(child.iter):
+                        has_inner_loader_loop = True
+                        break
+
+            if has_inner_loader_loop:
+                calls_set_epoch = False
+                for child in ast.walk(node):
+                    if (
+                        isinstance(child, ast.Call)
+                        and isinstance(child.func, ast.Attribute)
+                        and child.func.attr == "set_epoch"
+                    ):
+                        calls_set_epoch = True
+                        break
+
+                if not calls_set_epoch:
+                    emit(
+                        node,
+                        "R121",
+                        "Distributed training loop omits sampler.set_epoch(epoch); "
+                        "DistributedSampler will produce identical shuffles every epoch.",
+                        "Call sampler.set_epoch(epoch) at the start of each training epoch to "
+                        "ensure unique shuffle order across epochs.",
+                        "review",
+                    )

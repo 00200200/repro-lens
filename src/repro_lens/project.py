@@ -655,6 +655,7 @@ SEED_KWARG_RULES = {
     "R115": "random_state",
     "R129": "random_state",
     "R118": "seed",
+    "R121": "seed",
     "R127": "seed",
 }
 

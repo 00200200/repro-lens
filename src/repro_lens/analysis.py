@@ -1041,6 +1041,7 @@ def analyze(
     )
     frameworks.check_ray_distributed_seeding(tree, scanner.emit, scanner.qualified)
     frameworks.check_jax_key_reuse(tree, scanner.emit, scanner.qualified)
+    frameworks.check_distributed_sampler_epoch(tree, scanner.emit, scanner.qualified)
     suppressions = {}
     invalid = []
     known_codes = {
