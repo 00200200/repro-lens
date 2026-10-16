@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from repro_lens.cli import ansi_enabled, main, resolve_check_format
-from repro_lens.project import check, render
+from repro_lens.project import check, read_policy, render
 
 
 def test_parallel_scan_matches_serial_findings_and_order(tmp_path):
@@ -272,3 +272,59 @@ def test_pretty_cli_stays_plain_when_stdout_is_captured(tmp_path, capsys):
     text = capsys.readouterr().out
     assert "train.py:2:1 R103 [warning]" in text
     assert "-->" not in text
+
+
+def test_policy_ignore_rules(tmp_path):
+    (tmp_path / "train.py").write_text("import random\nrandom.Random()\n")
+    # Without policy, R103 is flagged
+    assert [f["code"] for f in check(tmp_path)["findings"]] == ["R103"]
+
+    # With ignore = ["R103"], R103 is skipped
+    (tmp_path / "pyproject.toml").write_text('[tool.repro-lens]\nignore = ["R103"]\n')
+    policy = read_policy(tmp_path)
+    assert policy["ignore"] == ["R103"]
+    assert check(tmp_path)["findings"] == []
+
+    # Invalid rule code in ignore raises ValueError in read_policy and yields P202 in check()
+    (tmp_path / "pyproject.toml").write_text('[tool.repro-lens]\nignore = ["R999"]\n')
+    with pytest.raises(ValueError, match="Unknown rule code in ignore: R999"):
+        read_policy(tmp_path)
+    report = check(tmp_path)
+    assert any(f["code"] == "P202" for f in report["findings"])
+
+    # Non-list ignore raises ValueError
+    (tmp_path / "pyproject.toml").write_text('[tool.repro-lens]\nignore = "R103"\n')
+    with pytest.raises(ValueError, match="ignore must be a list"):
+        read_policy(tmp_path)
+
+
+def test_policy_severity_overrides(tmp_path):
+    (tmp_path / "train.py").write_text("import random\nrandom.Random()\n")
+
+    # Override R103 (default: warning) to error
+    (tmp_path / "pyproject.toml").write_text('[tool.repro-lens.severities]\nR103 = "error"\n')
+    policy = read_policy(tmp_path)
+    assert policy["severities"] == {"R103": "error"}
+    report = check(tmp_path)
+    assert len(report["findings"]) == 1
+    assert report["findings"][0]["code"] == "R103"
+    assert report["findings"][0]["severity"] == "error"
+    # Fails when failing on error
+    assert main(["check", "--root", str(tmp_path), "--fail-on", "error"]) == 1
+
+    # Override R103 to review
+    (tmp_path / "pyproject.toml").write_text('[tool.repro-lens.severities]\nR103 = "review"\n')
+    report = check(tmp_path)
+    assert report["findings"][0]["severity"] == "review"
+    # Does not fail when fail-on is warning
+    assert main(["check", "--root", str(tmp_path), "--fail-on", "warning"]) == 0
+
+    # Invalid severity string raises ValueError
+    (tmp_path / "pyproject.toml").write_text('[tool.repro-lens.severities]\nR103 = "fatal"\n')
+    with pytest.raises(ValueError, match="Invalid severity for R103"):
+        read_policy(tmp_path)
+
+    # Unknown rule in severities raises ValueError
+    (tmp_path / "pyproject.toml").write_text('[tool.repro-lens.severities]\nR999 = "warning"\n')
+    with pytest.raises(ValueError, match="Unknown rule code in severities: R999"):
+        read_policy(tmp_path)

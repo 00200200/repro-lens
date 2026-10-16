@@ -13,7 +13,7 @@ from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
 
-from .analysis import CustomRule, Finding, analyze
+from .analysis import RULES, CustomRule, Finding, analyze
 from .frameworks import RULES as FRAMEWORK_RULES
 from .notebooks import check_execution_order, notebook_source
 
@@ -123,7 +123,7 @@ def read_policy(root: Path) -> dict:
     policy = tooling.get("repro-lens", {})
     if not isinstance(policy, dict):
         raise ValueError("[tool.repro-lens] must be a table")
-    allowed = {"exclude", "required-files", "verify"}
+    allowed = {"exclude", "required-files", "verify", "ignore", "severities"}
     unknown = set(policy) - allowed
     if unknown:
         raise ValueError(f"Unknown repro-lens settings: {sorted(unknown)}")
@@ -131,6 +131,34 @@ def read_policy(root: Path) -> dict:
         value = policy.get(field, [])
         if not isinstance(value, list) or any(not isinstance(x, str) or not x for x in value):
             raise ValueError(f"{field} must be a list of nonempty strings")
+
+    known_rules = set(RULES)
+    for custom in load_custom_rules(root):
+        known_rules.add(custom.id)
+
+    if "ignore" in policy:
+        ignore_rules = policy["ignore"]
+        if not isinstance(ignore_rules, list) or any(
+            not isinstance(x, str) or not x for x in ignore_rules
+        ):
+            raise ValueError("ignore must be a list of nonempty strings")
+        for rule_id in ignore_rules:
+            if rule_id not in known_rules:
+                raise ValueError(f"Unknown rule code in ignore: {rule_id}")
+
+    if "severities" in policy:
+        severities = policy["severities"]
+        if not isinstance(severities, dict):
+            raise ValueError("severities must be a table")
+        valid_severities = {"warning", "review", "error"}
+        for rule_id, sev in severities.items():
+            if not isinstance(rule_id, str) or rule_id not in known_rules:
+                raise ValueError(f"Unknown rule code in severities: {rule_id}")
+            if not isinstance(sev, str) or sev not in valid_severities:
+                expected = sorted(valid_severities)
+                raise ValueError(
+                    f"Invalid severity for {rule_id}: {sev!r}. Must be one of {expected}"
+                )
     return policy
 
 
@@ -437,6 +465,26 @@ def check(root: Path, selected: list[str] | None = None, jobs: int = 1) -> dict:
     for active, ignored in results:
         findings.extend(active)
         suppressed.extend(ignored)
+    ignored_rule_codes = set(policy.get("ignore", []))
+    severity_overrides = policy.get("severities", {})
+    if ignored_rule_codes or severity_overrides:
+        filtered_findings = []
+        for f in findings:
+            if f.code in ignored_rule_codes:
+                continue
+            if f.code in severity_overrides:
+                f = replace(f, severity=severity_overrides[f.code])
+            filtered_findings.append(f)
+        findings = filtered_findings
+
+        filtered_suppressed = []
+        for f in suppressed:
+            if f.code in ignored_rule_codes:
+                continue
+            if f.code in severity_overrides:
+                f = replace(f, severity=severity_overrides[f.code])
+            filtered_suppressed.append(f)
+        suppressed = filtered_suppressed
     findings.sort(key=lambda f: (f.path, f.cell or 0, f.line, f.code))
     return {
         "schema_version": 1,
