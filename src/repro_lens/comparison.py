@@ -114,11 +114,37 @@ def changed_fields(before: dict, after: dict, *, metadata: bool = False) -> dict
     }
 
 
-def compare_reports(before_path: Path, after_path: Path) -> dict:
+def compare_reports(
+    before_path: Path,
+    after_path: Path,
+    *,
+    atol: float | None = None,
+    rtol: float | None = None,
+) -> dict:
     before, before_hash = read_report(before_path)
     after, after_hash = read_report(after_path)
     before_inputs, after_inputs = before["inputs_sha256"], after["inputs_sha256"]
-    policy_changes = changed_fields(before["configuration"], after["configuration"])
+
+    if atol is not None:
+        if type(atol) not in (int, float) or not math.isfinite(atol) or atol < 0:
+            raise ValueError("atol must be finite and nonnegative")
+    if rtol is not None:
+        if type(rtol) not in (int, float) or not math.isfinite(rtol) or rtol < 0:
+            raise ValueError("rtol must be finite and nonnegative")
+
+    before_cfg = dict(before["configuration"])
+    after_cfg = dict(after["configuration"])
+    comparison_config = dict(before["configuration"])
+    if atol is not None:
+        before_cfg["atol"] = atol
+        after_cfg["atol"] = atol
+        comparison_config["atol"] = atol
+    if rtol is not None:
+        before_cfg["rtol"] = rtol
+        after_cfg["rtol"] = rtol
+        comparison_config["rtol"] = rtol
+
+    policy_changes = changed_fields(before_cfg, after_cfg)
     environment_changes = changed_fields(before["environment"], after["environment"], metadata=True)
     first_runtime, second_runtime = before["runs"][0]["runtime"], after["runs"][0]["runtime"]
     if not same_json(first_runtime, second_runtime):
@@ -157,22 +183,34 @@ def compare_reports(before_path: Path, after_path: Path) -> dict:
         report["input_immutability"] = "changed"
     else:
         report["input_immutability"] = "unchanged"
+    has_tolerance_difference = False
     for left, first in enumerate(before["runs"], 1):
         for right, second in enumerate(after["runs"], 1):
             report["differences"].extend(
                 f"Before run {left}, after run {right}: {difference}"
-                for difference in output_differences(first, second, before["configuration"])
+                for difference in output_differences(first, second, comparison_config)
             )
+            for name in comparison_config["metrics"]:
+                if first["metrics"][name] != second["metrics"][name]:
+                    has_tolerance_difference = True
     if report["differences"]:
         report["status"] = "mismatch"
+    elif has_tolerance_difference:
+        report["tolerance_status"] = "matched (within tolerance)"
     return report
 
 
-def agent_review(before_path: Path, after_path: Path) -> dict:
+def agent_review(
+    before_path: Path,
+    after_path: Path,
+    *,
+    atol: float | None = None,
+    rtol: float | None = None,
+) -> dict:
     """Return a machine-readable verdict for an agent-driven before/after change."""
     before, _ = read_report(before_path)
     after, _ = read_report(after_path)
-    report = compare_reports(before_path, after_path)
+    report = compare_reports(before_path, after_path, atol=atol, rtol=rtol)
     before_metrics = before["runs"][0]["metrics"]
     after_metrics = after["runs"][0]["metrics"]
     delta_metrics = {
@@ -187,11 +225,12 @@ def agent_review(before_path: Path, after_path: Path) -> dict:
         risks.append("The verification contract or recorded environment changed.")
     if report.get("input_immutability") == "changed":
         risks.append("Declared input files changed and require human review.")
-    verdict = {
+    verdict_map = {
         "matched": "APPROVED",
         "mismatch": "REJECTED",
         "not_comparable": "NEEDS_HUMAN_REVIEW",
-    }[report["status"]]
+    }
+    verdict = verdict_map[report["status"]]
     if report["status"] == "matched" and report.get("input_immutability") == "changed":
         verdict = "NEEDS_HUMAN_REVIEW"
     return {
@@ -206,9 +245,10 @@ def agent_review(before_path: Path, after_path: Path) -> dict:
 
 
 def render_comparison(report: dict, format_: str) -> str:
+    status_label = report.get("tolerance_status") or report["status"]
     if format_ == "json":
         return json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
-    lines = [f"Repro Lens: {report['status']}", report["assurance"]]
+    lines = [f"Repro Lens: {status_label}", report["assurance"]]
     lines.extend(f"{side.title()}: {report[side]['path']}" for side in ("before", "after"))
     for category in ("policy_changes", "environment_changes"):
         for name in report[category]:

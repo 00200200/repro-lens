@@ -107,6 +107,14 @@ def read_verify_config(policy: dict) -> dict:
     if not isinstance(original, dict):
         raise ValueError("Configure [tool.repro-lens.verify] before running verify")
     config = original.copy()
+    if "abs-tol" in config:
+        config.setdefault("atol", config.pop("abs-tol"))
+    if "rel-tol" in config:
+        config.setdefault("rtol", config.pop("rel-tol"))
+    if "abs_tol" in config:
+        config.setdefault("atol", config.pop("abs_tol"))
+    if "rel_tol" in config:
+        config.setdefault("rtol", config.pop("rel_tol"))
     allowed = {
         "command",
         "inputs",
@@ -466,9 +474,19 @@ def verify(
     seeds: list[int] | None = None,
     sandbox: str | None = None,
     sandbox_image: str | None = None,
+    atol: float | None = None,
+    rtol: float | None = None,
 ) -> dict:
     root = root.resolve()
     config = read_verify_config(read_policy(root))
+    if atol is not None:
+        if type(atol) not in (int, float) or not math.isfinite(atol) or atol < 0:
+            raise ValueError("verify.atol must be finite and nonnegative")
+        config["atol"] = atol
+    if rtol is not None:
+        if type(rtol) not in (int, float) or not math.isfinite(rtol) or rtol < 0:
+            raise ValueError("verify.rtol must be finite and nonnegative")
+        config["rtol"] = rtol
     if sandbox is not None:
         if sandbox not in ("docker", "podman"):
             raise ValueError(f"verify.sandbox must be 'docker' or 'podman', got {sandbox!r}")
