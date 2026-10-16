@@ -496,3 +496,117 @@ def test_check_diff_skips_notebooks(tmp_path, capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert nb_path.read_text(encoding="utf-8") == nb_before
+
+
+def test_write_baseline_generates_portable_json(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+
+    code = main(["check", "--root", str(tmp_path), "--write-baseline"])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "wrote 1 baseline findings to .repro-lens-baseline.json" in captured.out
+
+    baseline_file = tmp_path / ".repro-lens-baseline.json"
+    assert baseline_file.is_file()
+    data = json.loads(baseline_file.read_text(encoding="utf-8"))
+    assert data["schema_version"] == 1
+    assert data["generator"] == "repro-lens"
+    assert len(data["findings"]) == 1
+    assert data["findings"][0]["path"] == "train.py"
+    assert data["findings"][0]["code"] == "R101"
+
+
+def test_write_baseline_custom_path(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+
+    code = main(["check", "--root", str(tmp_path), "--write-baseline", "custom_baseline.json"])
+    assert code == 0
+    assert (tmp_path / "custom_baseline.json").is_file()
+
+
+def test_baseline_suppresses_legacy_findings(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+
+    # Record baseline
+    main(["check", "--root", str(tmp_path), "--write-baseline"])
+
+    # Normal check without baseline flag fails
+    assert main(["check", "--root", str(tmp_path)]) == 1
+
+    # Check with baseline flag passes
+    assert main(["check", "--root", str(tmp_path), "--baseline"]) == 0
+    report = check(tmp_path, baseline=tmp_path / ".repro-lens-baseline.json")
+    assert report["findings"] == []
+    assert len(report["suppressed"]) == 1
+
+
+def test_baseline_reports_new_regressions(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+    main(["check", "--root", str(tmp_path), "--write-baseline"])
+
+    # Add a new regression
+    (tmp_path / "model.py").write_text(
+        "from sklearn.ensemble import RandomForestClassifier\nclf = RandomForestClassifier()\n",
+        encoding="utf-8",
+    )
+
+    code = main(["check", "--root", str(tmp_path), "--baseline"])
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "model.py" in captured.out
+    assert "train.py" not in captured.out
+
+
+def test_baseline_in_pyproject_toml_is_automatically_loaded(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+    main(["check", "--root", str(tmp_path), "--write-baseline"])
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repro-lens]\nbaseline = ".repro-lens-baseline.json"\n',
+        encoding="utf-8",
+    )
+
+    # Automatically passes without explicit --baseline
+    assert main(["check", "--root", str(tmp_path)]) == 0
+
+
+def test_baseline_shifted_lines_still_suppressed(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+    main(["check", "--root", str(tmp_path), "--write-baseline"])
+
+    # Insert lines above
+    (tmp_path / "train.py").write_text(
+        "# New comment 1\n# New comment 2\n" + source,
+        encoding="utf-8",
+    )
+
+    assert main(["check", "--root", str(tmp_path), "--baseline"]) == 0
+
+
+def test_clean_baseline_removes_stale_entries(tmp_path, capsys):
+    source = "from sklearn.model_selection import train_test_split\ntrain_test_split(X, y)\n"
+    (tmp_path / "train.py").write_text(source, encoding="utf-8")
+    main(["check", "--root", str(tmp_path), "--write-baseline"])
+
+    # Fix the issue
+    (tmp_path / "train.py").write_text(
+        "from sklearn.model_selection import train_test_split\n"
+        "train_test_split(X, y, random_state=42)\n",
+        encoding="utf-8",
+    )
+
+    assert main(["check", "--root", str(tmp_path), "--baseline", "--clean-baseline"]) == 0
+    cleaned = json.loads((tmp_path / ".repro-lens-baseline.json").read_text(encoding="utf-8"))
+    assert cleaned["findings"] == []
+
+
+def test_baseline_missing_file_raises_error(tmp_path, capsys):
+    assert main(["check", "--root", str(tmp_path), "--baseline", "missing.json"]) == 2
+    captured = capsys.readouterr()
+    assert "Baseline file does not exist" in captured.err

@@ -11,7 +11,7 @@ import re
 import subprocess
 import tokenize
 import tomllib
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import replace
 from pathlib import Path
 
@@ -125,7 +125,7 @@ def read_policy(root: Path) -> dict:
     policy = tooling.get("repro-lens", {})
     if not isinstance(policy, dict):
         raise ValueError("[tool.repro-lens] must be a table")
-    allowed = {"exclude", "required-files", "verify", "ignore", "severities"}
+    allowed = {"exclude", "required-files", "verify", "ignore", "severities", "baseline"}
     unknown = set(policy) - allowed
     if unknown:
         raise ValueError(f"Unknown repro-lens settings: {sorted(unknown)}")
@@ -133,6 +133,11 @@ def read_policy(root: Path) -> dict:
         value = policy.get(field, [])
         if not isinstance(value, list) or any(not isinstance(x, str) or not x for x in value):
             raise ValueError(f"{field} must be a list of nonempty strings")
+
+    if "baseline" in policy:
+        baseline_val = policy["baseline"]
+        if not isinstance(baseline_val, str) or not baseline_val.strip():
+            raise ValueError("baseline must be a nonempty string path")
 
     known_rules = set(RULES)
     for custom in load_custom_rules(root):
@@ -364,7 +369,86 @@ def _scan_path(args):
         ], []
 
 
-def check(root: Path, selected: list[str] | None = None, jobs: int = 1) -> dict:
+def read_baseline(path: Path) -> list[dict]:
+    """Read a .repro-lens-baseline.json file and return list of recorded findings."""
+    if not path.is_file():
+        raise ValueError(f"Baseline file does not exist: {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Baseline file is not valid JSON: {path}: {exc}") from exc
+    if not isinstance(data, dict) or "findings" not in data:
+        raise ValueError(f"Baseline file must contain a 'findings' list: {path}")
+    findings = data["findings"]
+    if not isinstance(findings, list):
+        raise ValueError(f"Baseline 'findings' must be a list: {path}")
+    return findings
+
+
+def write_baseline(path: Path, findings: list[dict]) -> None:
+    """Write detected findings to a portable baseline JSON file."""
+    portable_findings = [
+        {
+            "path": Path(f["path"]).as_posix(),
+            "code": f["code"],
+            "line": f.get("line", 1),
+            "column": f.get("column", 1),
+            "message": f.get("message", ""),
+        }
+        for f in findings
+    ]
+    portable_findings.sort(key=lambda f: (f["path"], f["line"], f["column"], f["code"]))
+    payload = {
+        "schema_version": 1,
+        "generator": "repro-lens",
+        "findings": portable_findings,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def apply_baseline(report: dict, baseline_findings: list[dict]) -> dict:
+    """Filter findings present in baseline from report['findings'] into report['suppressed']."""
+    baseline_exact = set((f["path"], f["code"], f["line"], f["column"]) for f in baseline_findings)
+    baseline_counts = Counter((f["path"], f["code"]) for f in baseline_findings)
+
+    unmatched: list[dict] = []
+    suppressed: list[dict] = list(report.get("suppressed", []))
+
+    remaining_report: list[dict] = []
+    for f in report.get("findings", []):
+        key_exact = (f["path"], f["code"], f["line"], f["column"])
+        key_code = (f["path"], f["code"])
+        if key_exact in baseline_exact and baseline_counts[key_code] > 0:
+            baseline_exact.remove(key_exact)
+            baseline_counts[key_code] -= 1
+            suppressed.append(f)
+        else:
+            remaining_report.append(f)
+
+    for f in remaining_report:
+        key_code = (f["path"], f["code"])
+        if baseline_counts[key_code] > 0:
+            baseline_counts[key_code] -= 1
+            suppressed.append(f)
+        else:
+            unmatched.append(f)
+
+    stale_count = sum(baseline_counts.values())
+    new_report = dict(report)
+    new_report["findings"] = unmatched
+    new_report["suppressed"] = suppressed
+    if stale_count > 0:
+        new_report["stale_baseline_entries"] = stale_count
+    return new_report
+
+
+def check(
+    root: Path,
+    selected: list[str] | None = None,
+    jobs: int = 1,
+    baseline: Path | str | None = None,
+) -> dict:
     root = root.resolve()
     if jobs < 1:
         raise ValueError("jobs must be a positive integer")
@@ -488,7 +572,7 @@ def check(root: Path, selected: list[str] | None = None, jobs: int = 1) -> dict:
             filtered_suppressed.append(f)
         suppressed = filtered_suppressed
     findings.sort(key=lambda f: (f.path, f.cell or 0, f.line, f.code))
-    return {
+    report = {
         "schema_version": 1,
         "kind": "static_check",
         "root": str(root),
@@ -507,6 +591,14 @@ def check(root: Path, selected: list[str] | None = None, jobs: int = 1) -> dict:
             "Framework checks cover only the APIs and conditions listed in docs/frameworks.md.",
         ],
     }
+    baseline_target = baseline if baseline is not None else policy.get("baseline")
+    if baseline_target is not None:
+        baseline_path = (
+            Path(baseline_target) if Path(baseline_target).is_absolute() else root / baseline_target
+        )
+        baseline_findings = read_baseline(baseline_path)
+        report = apply_baseline(report, baseline_findings)
+    return report
 
 
 def ignore_comment(codes: set[str]) -> str:

@@ -48,6 +48,30 @@ to preview automated seed suggestions as a unified diff, or `repro-lens check --
 them in-place. The caller still has to supply a valid seed or RNG; the checker does not evaluate
 that value. If upstream RNG control is intentional, document it using a [justified suppression](rules.md) instead.
 
+## Gradual adoption on existing codebases (baseline)
+
+When introducing ReproLens into large legacy projects, existing warnings can be baselined so only new regressions fail CI:
+
+```bash
+# 1. Snapshot all existing legacy findings:
+repro-lens check --write-baseline
+
+# 2. In CI or pre-commit, enforce zero new regressions:
+repro-lens check --baseline
+```
+
+You can also declare the baseline file in `pyproject.toml` so `repro-lens check` respects it automatically:
+
+```toml
+[tool.repro-lens]
+baseline = ".repro-lens-baseline.json"
+```
+
+To prune resolved findings from your baseline, run:
+```bash
+repro-lens check --baseline --clean-baseline
+```
+
 ## Run an actual repeatability check
 
 From a directory where `repro-demo` does not already exist:
