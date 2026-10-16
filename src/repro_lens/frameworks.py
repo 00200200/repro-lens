@@ -22,6 +22,7 @@ RULES = {
     "R117": "Hugging Face TrainingArguments omits full_determinism=True or data_seed.",
     "R118": "Polars sample() has no explicit seed; review random subsampling.",
     "R120": "PyTorch deterministic algorithms are enabled without CUBLAS_WORKSPACE_CONFIG.",
+    "R122": "JAX PRNG key reused across multiple stochastic calls without splitting.",
     "R123": "Ray distributed worker or train loop uses fixed seed without worker rank or ID.",
     "R124": "torch.cuda.manual_seed seeds only the current GPU without manual_seed_all.",
     "R125": "Non-deterministic LLM generation parameters in vLLM or Hugging Face.",
@@ -1352,3 +1353,268 @@ def check_ray_distributed_seeding(tree: ast.AST, emit, qualified=None):
                     "random streams.",
                     "review",
                 )
+
+
+JAX_KEY_PRODUCERS = {"PRNGKey", "key", "split", "fold_in"}
+
+
+def is_jax_key_factory(node: ast.AST, qualified=None) -> tuple[bool, str]:
+    """Return True and factory name if node is jax.random.(PRNGKey|key|split|fold_in)."""
+    if not isinstance(node, ast.Call):
+        return False, ""
+    qname = qualified(node.func) if qualified else None
+    if qname:
+        for factory in JAX_KEY_PRODUCERS:
+            if qname == f"jax.random.{factory}":
+                return True, factory
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        attr = func.attr
+        if attr in JAX_KEY_PRODUCERS:
+            val = func.value
+            if isinstance(val, ast.Attribute) and val.attr == "random":
+                if isinstance(val.value, ast.Name) and val.value.id in {"jax", "j"}:
+                    return True, attr
+                if qualified and qualified(val.value) == "jax":
+                    return True, attr
+            elif isinstance(val, ast.Name):
+                if val.id in {"jr", "jrandom", "jax_random", "jax"}:
+                    return True, attr
+                if val.id == "random":
+                    if attr == "PRNGKey" or (qualified and qualified(val) == "jax.random"):
+                        return True, attr
+                    if attr in {"split", "fold_in", "key"}:
+                        return True, attr
+    elif isinstance(func, ast.Name):
+        if func.id == "PRNGKey":
+            return True, "PRNGKey"
+        if qname:
+            for factory in JAX_KEY_PRODUCERS:
+                if qname == f"jax.random.{factory}":
+                    return True, factory
+    return False, ""
+
+
+def is_jax_random_consumer(node: ast.AST, qualified=None) -> tuple[bool, str]:
+    """Return True and the function name if node is a jax.random.* stochastic consumer call."""
+    if not isinstance(node, ast.Call):
+        return False, ""
+    qname = qualified(node.func) if qualified else None
+    if qname and qname.startswith("jax.random."):
+        attr = qname.split(".")[-1]
+        if attr not in JAX_KEY_PRODUCERS:
+            return True, qname
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        attr = func.attr
+        if attr in JAX_KEY_PRODUCERS:
+            return False, ""
+        val = func.value
+        if isinstance(val, ast.Attribute) and val.attr == "random":
+            if isinstance(val.value, ast.Name) and val.value.id in {"jax", "j"}:
+                return True, f"jax.random.{attr}"
+            if qualified and qualified(val.value) == "jax":
+                return True, f"jax.random.{attr}"
+        elif isinstance(val, ast.Name):
+            if val.id in {"jr", "jrandom", "jax_random"}:
+                return True, f"jax.random.{attr}"
+            if val.id == "random":
+                if qualified and qualified(val) == "jax.random":
+                    return True, f"jax.random.{attr}"
+    elif isinstance(func, ast.Name):
+        if qname and qname.startswith("jax.random."):
+            attr = func.id
+            if attr not in JAX_KEY_PRODUCERS:
+                return True, qname
+    return False, ""
+
+
+def extract_key_arg(node: ast.Call) -> ast.AST | None:
+    """Extract the PRNG key argument node (positional 0 or keyword key=)."""
+    for kw in node.keywords:
+        if kw.arg == "key":
+            return kw.value
+    if node.args:
+        return node.args[0]
+    return None
+
+
+def get_key_identifier(node: ast.AST) -> tuple[str, str] | None:
+    """Return (base_var_name, key_repr) for a key argument."""
+    if isinstance(node, ast.Name):
+        return node.id, node.id
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+        base_var = node.value.id
+        try:
+            key_repr = ast.unparse(node)
+        except Exception:
+            key_repr = f"{base_var}[]"
+        return base_var, key_repr
+    return None
+
+
+def extract_target_names(target: ast.AST) -> list[str]:
+    """Extract variable names assigned in target expressions."""
+    names = []
+    if isinstance(target, ast.Name):
+        if target.id != "_":
+            names.append(target.id)
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        for elt in target.elts:
+            if isinstance(elt, ast.Starred):
+                names.extend(extract_target_names(elt.value))
+            else:
+                names.extend(extract_target_names(elt))
+    return names
+
+
+def is_key_param_name(name: str) -> bool:
+    """Return True if parameter name represents a JAX PRNG key."""
+    lowered = name.lower()
+    return (
+        lowered in {"key", "rng", "subkey"}
+        or lowered.endswith("_key")
+        or lowered.startswith("key_")
+        or lowered.endswith("_rng")
+        or lowered.startswith("rng_")
+    )
+
+
+class JaxPrngScopeVisitor(ast.NodeVisitor):
+    """Scan a single scope for stale / un-split JAX PRNG key reuse (R122)."""
+
+    def __init__(
+        self,
+        emit,
+        qualified=None,
+        initial_key_vars: set[str] | None = None,
+        flagged_calls: set[ast.AST] | None = None,
+    ):
+        self.emit = emit
+        self.qualified = qualified
+        self.key_vars = set(initial_key_vars or ())
+        self.key_uses: dict[str, list[ast.AST]] = {}
+        self.flagged_calls = flagged_calls if flagged_calls is not None else set()
+
+    def visit_FunctionDef(self, node):
+        pass
+
+    def visit_AsyncFunctionDef(self, node):
+        pass
+
+    def visit_ClassDef(self, node):
+        pass
+
+    def _reset_key(self, name: str):
+        self.key_uses = {
+            k: v for k, v in self.key_uses.items() if k != name and not k.startswith(f"{name}[")
+        }
+
+    def _is_key_producer(self, node: ast.AST) -> tuple[bool, str]:
+        if not isinstance(node, (ast.Call, ast.Subscript)):
+            return False, ""
+        if isinstance(node, ast.Call):
+            return is_jax_key_factory(node, self.qualified)
+        if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Call):
+            return is_jax_key_factory(node.value, self.qualified)
+        return False, ""
+
+    def visit_Assign(self, node: ast.Assign):
+        is_factory, _ = self._is_key_producer(node.value)
+        if is_factory:
+            targets = [name for t in node.targets for name in extract_target_names(t)]
+            for name in targets:
+                self.key_vars.add(name)
+                self._reset_key(name)
+        elif (isinstance(node.value, ast.Name) and node.value.id in self.key_vars) or (
+            isinstance(node.value, ast.Subscript)
+            and isinstance(node.value.value, ast.Name)
+            and node.value.value.id in self.key_vars
+        ):
+            targets = [name for t in node.targets for name in extract_target_names(t)]
+            for name in targets:
+                self.key_vars.add(name)
+                self._reset_key(name)
+        else:
+            self.visit(node.value)
+            targets = [name for t in node.targets for name in extract_target_names(t)]
+            for name in targets:
+                self.key_vars.discard(name)
+                self._reset_key(name)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign):
+        if not node.value:
+            return
+        is_factory, _ = self._is_key_producer(node.value)
+        if is_factory:
+            targets = extract_target_names(node.target)
+            for name in targets:
+                self.key_vars.add(name)
+                self._reset_key(name)
+        elif (isinstance(node.value, ast.Name) and node.value.id in self.key_vars) or (
+            isinstance(node.value, ast.Subscript)
+            and isinstance(node.value.value, ast.Name)
+            and node.value.value.id in self.key_vars
+        ):
+            targets = extract_target_names(node.target)
+            for name in targets:
+                self.key_vars.add(name)
+                self._reset_key(name)
+        else:
+            self.visit(node.value)
+            targets = extract_target_names(node.target)
+            for name in targets:
+                self.key_vars.discard(name)
+                self._reset_key(name)
+
+    def visit_Call(self, node: ast.Call):
+        is_consumer, _ = is_jax_random_consumer(node, self.qualified)
+        if is_consumer:
+            key_arg = extract_key_arg(node)
+            if key_arg is not None:
+                key_info = get_key_identifier(key_arg)
+                if key_info is not None:
+                    base_var, key_repr = key_info
+                    if base_var in self.key_vars:
+                        uses = self.key_uses.setdefault(key_repr, [])
+                        if len(uses) > 0 and node not in self.flagged_calls:
+                            self.flagged_calls.add(node)
+                            self.emit(
+                                node,
+                                "R122",
+                                f"JAX PRNG key {key_repr!r} reused across multiple stochastic "
+                                "calls without splitting.",
+                                "Split the key using 'key, subkey = jax.random.split(key)' before "
+                                "subsequent random calls to ensure independent random streams.",
+                                "warning",
+                            )
+                        uses.append(node)
+        self.generic_visit(node)
+
+
+def check_jax_key_reuse(tree: ast.AST, emit, qualified=None):
+    """Detect un-split JAX PRNG key reuse across multiple stochastic calls (R122)."""
+    module_key_vars: set[str] = set()
+    flagged_calls: set[ast.AST] = set()
+
+    if isinstance(tree, ast.Module):
+        mod_visitor = JaxPrngScopeVisitor(
+            emit, qualified, initial_key_vars=set(), flagged_calls=flagged_calls
+        )
+        for stmt in tree.body:
+            mod_visitor.visit(stmt)
+        module_key_vars = set(mod_visitor.key_vars)
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            param_keys = {
+                arg.arg
+                for arg in (node.args.posonlyargs + node.args.args + node.args.kwonlyargs)
+                if is_key_param_name(arg.arg)
+            }
+            initial_keys = set(module_key_vars) | param_keys
+            func_visitor = JaxPrngScopeVisitor(
+                emit, qualified, initial_key_vars=initial_keys, flagged_calls=flagged_calls
+            )
+            for stmt in node.body:
+                func_visitor.visit(stmt)
