@@ -476,6 +476,7 @@ def verify(
     sandbox_image: str | None = None,
     atol: float | None = None,
     rtol: float | None = None,
+    export: str | None = None,
 ) -> dict:
     root = root.resolve()
     config = read_verify_config(read_policy(root))
@@ -612,4 +613,138 @@ def verify(
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         report["error"] = str(exc)
     report_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    if export:
+        report["export"] = export_evidence(report, export, root)
     return report
+
+
+def export_evidence(
+    report: dict[str, Any],
+    target: str,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Export verification, comparison, or screening evidence to a tracker (W&B or MLflow).
+
+    Logs report metadata, metric statistics, artifact hashes, and the report file
+    to the active tracking session.
+    """
+    target = target.lower().strip()
+    if target not in {"wandb", "mlflow"}:
+        raise ValueError(f"Unsupported export target: {target!r}. Choose 'wandb' or 'mlflow'.")
+
+    report_path_str = report.get("report_path")
+    if report_path_str and Path(report_path_str).is_file():
+        report_file = Path(report_path_str)
+    else:
+        temp_dir = Path(root) if root else Path.cwd()
+        evidence_dir = temp_dir / ".repro-lens" / "exports"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        report_file = evidence_dir / f"repro_lens_report_{int(time.time())}.json"
+        report_file.write_text(
+            json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+
+    if target == "wandb":
+        try:
+            import wandb
+        except ImportError:
+            raise ValueError(
+                "Weights & Biases (wandb) is not installed. Install it with: pip install wandb"
+            ) from None
+
+        run = getattr(wandb, "run", None)
+        if run is None:
+            run = wandb.init(project="repro-lens", reinit=True)
+
+        run_id = getattr(run, "id", "active_run")
+        summary = getattr(run, "summary", {})
+
+        summary["repro_lens_status"] = report.get("status", "unknown")
+        if "kind" in report:
+            summary["repro_lens_kind"] = report["kind"]
+
+        for metric, stats in report.get("statistics", {}).items():
+            for stat_k, stat_v in stats.items():
+                if isinstance(stat_v, (int, float)):
+                    summary[f"repro_lens_{metric}_{stat_k}"] = stat_v
+
+        for i, r in enumerate(report.get("runs", []), 1):
+            for m_k, m_v in r.get("metrics", {}).items():
+                if isinstance(m_v, (int, float)):
+                    summary[f"repro_lens_run_{i}_{m_k}"] = m_v
+            for a_k, a_hash in r.get("artifacts_sha256", {}).items():
+                summary[f"repro_lens_artifact_{a_k}_sha256"] = str(a_hash)
+
+        if "findings" in report:
+            summary["repro_lens_findings_count"] = len(report["findings"])
+
+        logged_files = [str(report_file)]
+        try:
+            if hasattr(wandb, "Artifact"):
+                art = wandb.Artifact(
+                    name=f"repro-lens-{report.get('kind', 'report')}",
+                    type="reproducibility-evidence",
+                )
+                art.add_file(str(report_file), name="repro_lens_report.json")
+                if hasattr(run, "log_artifact"):
+                    run.log_artifact(art)
+                elif hasattr(wandb, "log_artifact"):
+                    wandb.log_artifact(art)
+            elif hasattr(wandb, "save"):
+                wandb.save(str(report_file))
+        except Exception:
+            if hasattr(wandb, "save"):
+                wandb.save(str(report_file))
+
+        return {
+            "target": "wandb",
+            "status": "exported",
+            "run_id": str(run_id),
+            "logged_files": logged_files,
+        }
+
+    else:
+        try:
+            import mlflow
+        except ImportError:
+            raise ValueError(
+                "MLflow is not installed. Install it with: pip install mlflow"
+            ) from None
+
+        active_run = mlflow.active_run()
+        if active_run is None:
+            active_run = mlflow.start_run()
+
+        run_id = active_run.info.run_id if hasattr(active_run, "info") else "active_run"
+
+        mlflow.set_tag("repro_lens_status", report.get("status", "unknown"))
+        if "kind" in report:
+            mlflow.set_tag("repro_lens_kind", report["kind"])
+
+        for metric, stats in report.get("statistics", {}).items():
+            for stat_k, stat_v in stats.items():
+                if isinstance(stat_v, (int, float)):
+                    mlflow.log_metric(f"repro_lens_{metric}_{stat_k}", float(stat_v))
+
+        for i, r in enumerate(report.get("runs", []), 1):
+            for m_k, m_v in r.get("metrics", {}).items():
+                if isinstance(m_v, (int, float)):
+                    mlflow.log_metric(f"repro_lens_run_{i}_{m_k}", float(m_v))
+            for a_k, a_hash in r.get("artifacts_sha256", {}).items():
+                mlflow.set_tag(f"repro_lens_artifact_{a_k}_sha256", str(a_hash))
+
+        if "findings" in report:
+            mlflow.log_metric("repro_lens_findings_count", float(len(report["findings"])))
+
+        logged_files = [str(report_file)]
+        if hasattr(mlflow, "log_dict"):
+            mlflow.log_dict(report, "repro_lens_report.json")
+        elif hasattr(mlflow, "log_artifact"):
+            mlflow.log_artifact(str(report_file))
+
+        return {
+            "target": "mlflow",
+            "status": "exported",
+            "run_id": str(run_id),
+            "logged_files": logged_files,
+        }

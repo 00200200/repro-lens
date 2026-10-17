@@ -25,7 +25,7 @@ from .project import (
     write_step_summary,
 )
 from .sarif import render_sarif, to_github
-from .verify import verify
+from .verify import export_evidence, verify
 
 AVAILABLE_TEMPLATES = ("sklearn", "pytorch")
 
@@ -167,6 +167,12 @@ def main(argv=None):
         action="store_true",
         help="Remove stale baseline entries when used with --baseline",
     )
+    scan.add_argument(
+        "--export",
+        choices=["wandb", "mlflow"],
+        default=None,
+        help="Export reproducibility report to an experiment tracker (wandb or mlflow)",
+    )
     replay = sub.add_parser(
         "verify", help="Execute the configured local experiment twice (not sandboxed)"
     )
@@ -206,6 +212,12 @@ def main(argv=None):
         default=None,
         help="Relative tolerance for metric comparison",
     )
+    replay.add_argument(
+        "--export",
+        choices=["wandb", "mlflow"],
+        default=None,
+        help="Export verification report and evidence artifacts to W&B or MLflow",
+    )
     comparison = sub.add_parser(
         "compare", help="Compare two retained verification reports without executing code"
     )
@@ -227,6 +239,12 @@ def main(argv=None):
         type=float,
         default=None,
         help="Relative tolerance for metric comparison",
+    )
+    comparison.add_argument(
+        "--export",
+        choices=["wandb", "mlflow"],
+        default=None,
+        help="Export comparison report to an experiment tracker (wandb or mlflow)",
     )
     review = sub.add_parser(
         "agent-review", help="Review an agent-driven change against retained evidence"
@@ -288,6 +306,10 @@ def main(argv=None):
             return 0
         if args.command == "compare":
             report = compare_reports(args.before, args.after, atol=args.atol, rtol=args.rtol)
+            if args.export:
+                report["export"] = export_evidence(report, args.export)
+                run_id = report["export"]["run_id"]
+                print(f"repro-lens: exported comparison report to {args.export} (run: {run_id})")
             print(render_comparison(report, args.format), end="")
             write_step_summary(report)
             status_map = {
@@ -336,8 +358,12 @@ def main(argv=None):
                 sandbox_image=args.sandbox_image,
                 atol=args.atol,
                 rtol=args.rtol,
+                export=args.export,
             )
             print(render(report, args.format), end="")
+            if args.export and "export" in report:
+                run_id = report["export"]["run_id"]
+                print(f"repro-lens: exported report to {args.export} (run: {run_id})")
             write_step_summary(report)
             exit_codes = {"matched": 0, "mismatch": 1, "stable": 0, "unstable": 1, "error": 2}
             return exit_codes.get(report["status"], 2)
@@ -381,6 +407,10 @@ def main(argv=None):
                 if args.add_ignores
                 else check(args.root, args.files, jobs=args.jobs, baseline=args.baseline)
             )
+            if getattr(args, "export", None):
+                report["export"] = export_evidence(report, args.export, args.root)
+                run_id = report["export"]["run_id"]
+                print(f"repro-lens: exported report to {args.export} (run: {run_id})")
             if args.clean_baseline and args.baseline:
                 baseline_path = (
                     args.baseline if args.baseline.is_absolute() else args.root / args.baseline
